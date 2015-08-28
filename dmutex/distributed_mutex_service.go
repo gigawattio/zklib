@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"gigawatt-server/pkg/zk/cluster"
+	"gigawatt-common/pkg/zk/cluster"
 
 	"github.com/cenkalti/backoff"
 )
