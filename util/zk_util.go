@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/samuel/go-zookeeper/zk"
@@ -14,7 +15,7 @@ type testLogger struct {
 }
 
 func (tl *testLogger) Write(bs []byte) (n int, err error) {
-	tl.t.Logf("%v%v%v", tl.prefix, string(bs), tl.suffix)
+	tl.t.Logf("%v%v%v", tl.prefix, strings.Trim(string(bs), "\n"), tl.suffix)
 	n = len(bs)
 	return
 }
