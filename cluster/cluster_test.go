@@ -13,11 +13,11 @@ import (
 
 // ncc creates a new Coordinator for a given test cluster.
 func ncc(t *testing.T, tc *zk.TestCluster, subscribers ...chan Update) *Coordinator {
-	servers := make([]string, len(tc.Servers))
-	for i := 0; i < len(servers); i++ {
-		servers[i] = fmt.Sprintf("localhost:%v", tc.Servers[i].Port)
+	zkServers := make([]string, len(tc.Servers))
+	for i := 0; i < len(zkServers); i++ {
+		zkServers[i] = fmt.Sprintf("localhost:%v", tc.Servers[i].Port)
 	}
-	cc, err := NewCoordinator(servers, 1*time.Second, "/comorgnet/election", subscribers...)
+	cc, err := NewCoordinator(zkServers, 1*time.Second, "/comorgnet/election", subscribers...)
 	if err != nil {
 		t.Fatal(err)
 	}

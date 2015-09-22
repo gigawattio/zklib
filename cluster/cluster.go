@@ -26,7 +26,7 @@ type (
 	}
 
 	Coordinator struct {
-		servers            []string
+		zkServers          []string
 		sessionTimeout     time.Duration
 		zkCli              *zk.Conn
 		eventCh            <-chan zk.Event
@@ -56,7 +56,7 @@ func (node Node) String() string {
 // NewCoordinator creates a new cluster client.
 //
 // leaderElectionPath is the ZooKeeper path to conduct elections under.
-func NewCoordinator(servers []string, sessionTimeout time.Duration, leaderElectionPath string, subscribers ...chan Update) (*Coordinator, error) {
+func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElectionPath string, subscribers ...chan Update) (*Coordinator, error) {
 	// Gather local node info.
 	uid, err := uuid.NewV4()
 	if err != nil {
@@ -80,7 +80,7 @@ func NewCoordinator(servers []string, sessionTimeout time.Duration, leaderElecti
 	}
 
 	cc := &Coordinator{
-		servers:            servers,
+		zkServers:          zkServers,
 		sessionTimeout:     sessionTimeout,
 		leaderElectionPath: leaderElectionPath,
 		localNode:          localNode,
@@ -104,7 +104,7 @@ func (cc *Coordinator) Start() error {
 	}
 
 	// Assemble the cluster coordinator.
-	zkCli, eventCh, err := zk.Connect(cc.servers, cc.sessionTimeout)
+	zkCli, eventCh, err := zk.Connect(cc.zkServers, cc.sessionTimeout)
 	if err != nil {
 		return err
 	}
