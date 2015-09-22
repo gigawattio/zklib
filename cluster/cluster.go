@@ -9,6 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"gigawatt-common/pkg/gentle"
+	"gigawatt-common/pkg/zk/util"
+
 	"github.com/cenkalti/backoff"
 	"github.com/jaytaylor/uuid"
 	"github.com/samuel/go-zookeeper/zk"
@@ -181,56 +184,16 @@ func (cc *Coordinator) mode() string {
 	return Follower
 }
 
-// createP functions similarly to `mkdir -p`.
-func (cc *Coordinator) createP(path string, data []byte, flags int32, acl []zk.ACL) (zxIds []string, err error) {
-	zxIds = []string{}
-	pieces := strings.Split(strings.Trim(path, "/"), "/")
-	var zxId string
-	var soFar string
-	for _, piece := range pieces {
-		soFar += "/" + piece
-		if zxId, err = cc.zkCli.Create(soFar, data, flags, acl); err != nil && err != zk.ErrNodeExists {
-			return
-		}
-		zxIds = append(zxIds, zxId)
-	}
-	err = nil // Clear out any potential error state, since if we made it this far we're OK.
-	return
-}
-
-// mustCreateP will keep trying to create the path indefinitely.
-func (cc *Coordinator) mustCreateP(path string, data []byte, flags int32, acl []zk.ACL) (zxIds []string) {
-	var err error
-	operation := func() error {
-		if zxIds, err = cc.createP(path, []byte{}, 0, acl); err != nil {
-			return err
-		}
-		return nil
-	}
-	retryUntilSuccess(fmt.Sprintf("%s mustCreateP", cc.Id()), operation, backoff.NewConstantBackOff(50*time.Millisecond))
-	return
-}
-
-func (cc *Coordinator) mustCreateProtectedEphemeralSequential(path string, data []byte, acl []zk.ACL) (zxId string) {
-	var err error
-	operation := func() error {
-		if zxId, err = cc.zkCli.CreateProtectedEphemeralSequential(path, data, acl); err != nil {
-			return err
-		}
-		return nil
-	}
-	retryUntilSuccess(fmt.Sprintf("%s mustCreateProtectedEphemeralSequential", cc.Id()), operation, backoff.NewConstantBackOff(50*time.Millisecond))
-	return
-}
-
 func (cc *Coordinator) electionLoop() {
 	createElectionZNode := func() (zxId string) {
 		log.Debug(cc.Id()+": creating election path=%s", cc.leaderElectionPath)
-		zxIds := cc.mustCreateP(cc.leaderElectionPath, []byte{}, 0, zk.WorldACL(zk.PermAll))
+		strategy := backoff.NewConstantBackOff(50 * time.Millisecond)
+		zxIds := util.MustCreateP(cc.zkCli, cc.leaderElectionPath, []byte{}, 0, zk.WorldACL(zk.PermAll), strategy)
 		log.Debug(cc.Id()+": created election path, zxIds=%+v", zxIds)
 
 		log.Debug(cc.Id() + ": creating protected ephemeral")
-		zxId = cc.mustCreateProtectedEphemeralSequential(cc.leaderElectionPath+"/n_", cc.localNodeJson, zk.WorldACL(zk.PermAll))
+		strategy = backoff.NewConstantBackOff(50 * time.Millisecond)
+		zxId = util.MustCreateProtectedEphemeralSequential(cc.zkCli, cc.leaderElectionPath+"/n_", cc.localNodeJson, zk.WorldACL(zk.PermAll), strategy)
 		log.Debug(cc.Id()+": created protected ephemeral, zxId=%s", zxId)
 		return
 	}
@@ -246,7 +209,7 @@ func (cc *Coordinator) electionLoop() {
 			return nil
 		}
 		log.Debug(cc.Id()+": setting watch on path=%s", cc.leaderElectionPath)
-		retryUntilSuccess(fmt.Sprintf("%s mustSubscribe", cc.Id()), operation, backoff.NewConstantBackOff(50*time.Millisecond))
+		gentle.RetryUntilSuccess(fmt.Sprintf("%s mustSubscribe", cc.Id()), operation, backoff.NewConstantBackOff(50*time.Millisecond))
 		log.Debug(cc.Id()+": successfully set watch on path=%s", cc.leaderElectionPath)
 		return
 	}
@@ -283,7 +246,7 @@ func (cc *Coordinator) electionLoop() {
 				}
 				return nil
 			}
-			retryUntilSuccess("checkLeader", operation, backoff.NewConstantBackOff(50*time.Millisecond))
+			gentle.RetryUntilSuccess("checkLeader", operation, backoff.NewConstantBackOff(50*time.Millisecond))
 			log.Notice(cc.Id()+": checkLeader: children=%+v, stat=%+v", children, *stat)
 			min := -1
 			var minChild string
@@ -341,11 +304,14 @@ func (cc *Coordinator) electionLoop() {
 					continue
 				}
 				log.Debug(cc.Id()+": eventCh: received event=%+v", ev)
-				if ev.Type == zk.EventSession && ev.State == zk.StateConnected {
-					zxId = createElectionZNode()
-					log.Notice(cc.Id()+": new zxId=%s", zxId)
-					setWatch()
-					checkLeader()
+				if ev.Type == zk.EventSession {
+					switch ev.State {
+					case zk.StateHasSession:
+						zxId = createElectionZNode()
+						log.Notice(cc.Id()+": new zxId=%s", zxId)
+						setWatch()
+						checkLeader()
+					}
 				}
 
 			case ev := <-childCh: // Watch election path.
@@ -375,9 +341,9 @@ func (cc *Coordinator) electionLoop() {
 				}
 				cc.subscriberChans = revisedChans
 
-			case ackChan := <-cc.stopChan: // Stop loop.
+			case ack := <-cc.stopChan: // Stop loop.
 				log.Debug(cc.Id() + ": election loop received stop request")
-				ackChan <- struct{}{} // Acknowledge stop.
+				ack <- struct{}{} // Acknowledge stop.
 				log.Debug(cc.Id() + ": election loop exiting")
 				return
 			}
