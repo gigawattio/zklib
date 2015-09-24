@@ -22,6 +22,10 @@ const (
 	Follower = "follower"
 )
 
+var (
+	backoffDuration = 50 * time.Millisecond
+)
+
 type (
 	Node struct {
 		Uuid     uuid.UUID
@@ -119,12 +123,12 @@ func (cc *Coordinator) Start() error {
 }
 
 func (cc *Coordinator) Stop() error {
-	log.Info("Coordinator %s stopping..", cc.Id())
+	log.Info("Coordinator Id=%v stopping..", cc.Id())
 	cc.stateLock.Lock()
 	defer cc.stateLock.Unlock()
 
 	if cc.zkCli == nil {
-		return fmt.Errorf("%s: already stopped", cc.Id())
+		return fmt.Errorf("%v: already stopped", cc.Id())
 	}
 
 	// Stop the election loop
@@ -135,7 +139,7 @@ func (cc *Coordinator) Stop() error {
 	cc.zkCli.Close()
 	cc.zkCli = nil
 
-	log.Info("Coordinator %s stopped", cc.Id())
+	log.Info("Coordinator Id=%v stopped", cc.Id())
 	return nil
 }
 
@@ -183,15 +187,15 @@ func (cc *Coordinator) mode() string {
 
 func (cc *Coordinator) electionLoop() {
 	createElectionZNode := func() (zxId string) {
-		log.Debug(cc.Id()+": creating election path=%s", cc.leaderElectionPath)
-		strategy := backoff.NewConstantBackOff(50 * time.Millisecond)
+		log.Debug(cc.Id()+": creating election path=%v", cc.leaderElectionPath)
+		strategy := backoff.NewConstantBackOff(backoffDuration)
 		zxIds := util.MustCreateP(cc.zkCli, cc.leaderElectionPath, []byte{}, 0, zk.WorldACL(zk.PermAll), strategy)
 		log.Debug(cc.Id()+": created election path, zxIds=%+v", zxIds)
 
 		log.Debug(cc.Id() + ": creating protected ephemeral")
-		strategy = backoff.NewConstantBackOff(50 * time.Millisecond)
+		strategy = backoff.NewConstantBackOff(backoffDuration)
 		zxId = util.MustCreateProtectedEphemeralSequential(cc.zkCli, cc.leaderElectionPath+"/n_", cc.localNodeJson, zk.WorldACL(zk.PermAll), strategy)
-		log.Debug(cc.Id()+": created protected ephemeral, zxId=%s", zxId)
+		log.Debug(cc.Id()+": created protected ephemeral, zxId=%v", zxId)
 		return
 	}
 
@@ -205,9 +209,9 @@ func (cc *Coordinator) electionLoop() {
 			}
 			return nil
 		}
-		log.Debug(cc.Id()+": setting watch on path=%s", cc.leaderElectionPath)
-		gentle.RetryUntilSuccess(fmt.Sprintf("%s mustSubscribe", cc.Id()), operation, backoff.NewConstantBackOff(50*time.Millisecond))
-		log.Debug(cc.Id()+": successfully set watch on path=%s", cc.leaderElectionPath)
+		log.Debug(cc.Id()+": setting watch on path=%v", cc.leaderElectionPath)
+		gentle.RetryUntilSuccess(fmt.Sprintf("%v mustSubscribe", cc.Id()), operation, backoff.NewConstantBackOff(backoffDuration))
+		log.Debug(cc.Id()+": successfully set watch on path=%v", cc.leaderElectionPath)
 		return
 	}
 
@@ -254,7 +258,7 @@ func (cc *Coordinator) electionLoop() {
 				}
 				n, err := strconv.Atoi(pieces[1])
 				if err != nil {
-					log.Debug(cc.Id()+": Failed to parse child=%s: %s, skipping child", child, err)
+					log.Debug(cc.Id()+": Failed to parse child=%v: %s, skipping child", child, err)
 					continue
 				}
 				if min == -1 || n < min {
@@ -269,13 +273,13 @@ func (cc *Coordinator) electionLoop() {
 			minChild = cc.leaderElectionPath + "/" + minChild
 			data, stat, err := cc.zkCli.Get(minChild)
 			if err != nil {
-				log.Error(cc.Id()+": Error checking leader znode path=%s: %s", minChild, err)
+				log.Error(cc.Id()+": Error checking leader znode path=%v: %s", minChild, err)
 			}
-			log.Notice(cc.Id()+": Discovered leader znode at %s, data=%s stat=%+v", minChild, string(data), *stat)
+			log.Notice(cc.Id()+": Discovered leader znode at %v, data=%v stat=%+v", minChild, string(data), *stat)
 
 			var leaderNode Node
 			if err := json.Unmarshal(data, &leaderNode); err != nil {
-				log.Error(cc.Id()+": Failed parsing Node from JSON=%s: %s", string(data), err)
+				log.Error(cc.Id()+": Failed parsing Node from JSON=%v: %s", string(data), err)
 			}
 
 			cc.leaderLock.Lock()
@@ -305,7 +309,7 @@ func (cc *Coordinator) electionLoop() {
 					switch ev.State {
 					case zk.StateHasSession:
 						zxId = createElectionZNode()
-						log.Notice(cc.Id()+": new zxId=%s", zxId)
+						log.Notice(cc.Id()+": new zxId=%v", zxId)
 						setWatch()
 						checkLeader()
 					}
@@ -319,7 +323,7 @@ func (cc *Coordinator) electionLoop() {
 					checkLeader()
 				}
 				setWatch()
-				log.Debug(cc.Id()+": childCh: ev.Path=%s ev=%+v", ev.Path, ev)
+				log.Debug(cc.Id()+": childCh: ev.Path=%v ev=%+v", ev.Path, ev)
 
 				// case <-time.After(time.Second * 5):
 				// 	log.Info(cc.Id() + ": childCh: Child watcher timed out")
