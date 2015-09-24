@@ -13,8 +13,8 @@ import (
 	"gigawatt-common/pkg/zk/util"
 
 	"github.com/cenkalti/backoff"
-	"github.com/jaytaylor/uuid"
 	"github.com/samuel/go-zookeeper/zk"
+	"github.com/satori/go.uuid"
 )
 
 const (
@@ -61,16 +61,13 @@ func (node Node) String() string {
 // leaderElectionPath is the ZooKeeper path to conduct elections under.
 func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElectionPath string, subscribers ...chan Update) (*Coordinator, error) {
 	// Gather local node info.
-	uid, err := uuid.NewV4()
-	if err != nil {
-		return nil, fmt.Errorf("NewCoordinator: %s", err)
-	}
+	uid := uuid.NewV4()
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("NewCoordinator: %s", err)
 	}
 	localNode := Node{
-		Uuid:     *uid,
+		Uuid:     uid,
 		Hostname: hostname,
 	}
 	localNodeJson, err := json.Marshal(&localNode)
