@@ -1,6 +1,8 @@
 package util
 
 import (
+	"gigawatt-common/pkg/concurrency"
+
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -18,10 +20,20 @@ func RecursivelyDelete(conn *zk.Conn, path string) error {
 			if children, _, err = conn.Children(path); err != nil && err != zk.ErrNoNode {
 				return err
 			}
+			deleterFuncs := make([]func() error, 0, len(children))
 			for _, child := range children {
-				if err = wipe(conn, path+"/"+child); err != nil {
-					return err
-				}
+				func(child string) {
+					deleterFunc := func() (err error) {
+						if err = wipe(conn, path+"/"+child); err != nil {
+							return
+						}
+						return
+					}
+					deleterFuncs = append(deleterFuncs, deleterFunc)
+				}(child)
+			}
+			if err = concurrency.MultiGo(deleterFuncs...); err != nil {
+				return err
 			}
 			if err = conn.Delete(path, stat.Version); err != nil && err != zk.ErrNoNode {
 				return err
