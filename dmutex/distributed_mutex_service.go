@@ -87,7 +87,10 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 		}
 		service.coordinators[objectId] = coordinator
 
-		go service.autoExpire(coordinator.Id(), objectId, expireTimeout)
+		log.Info("[id=%v] Successfully acquired lock for objectId=%v", coordinator.Id(), objectId)
+		if expireTimeout.Nanoseconds() != int64(0) {
+			go service.autoExpire(coordinator.Id(), objectId, expireTimeout)
+		}
 	}
 
 	return nil
@@ -102,7 +105,7 @@ func (service *DistributedMutexService) Unlock(objectId string) error {
 			log.Warning("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", coordinator.Id(), objectId, err)
 		}
 		delete(service.coordinators, objectId)
-		log.Notice("[id=%v] Lock removed for objectId=%v", coordinator.Id(), objectId)
+		log.Info("[id=%v] Lock removed for objectId=%v", coordinator.Id(), objectId)
 	} else {
 		log.Debug("No lock found for objectId=%v", objectId)
 	}
