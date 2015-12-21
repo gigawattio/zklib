@@ -38,6 +38,7 @@ type Candidate struct {
 	registered       bool
 	registrationLock sync.Mutex
 	stopChan         chan chan struct{}
+	Debug            bool
 }
 
 func NewCandidate(electionPath string, node *Node) *Candidate {
@@ -56,6 +57,14 @@ func (c *Candidate) Registered() bool {
 }
 
 func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
+	debug := func(format string, args ...interface{}) {
+		if config.Debug {
+			log.ExtraCalldepth++
+			log.Debug(format, args...)
+			log.ExtraCalldepth--
+		}
+	}
+
 	log.Info("Candidate with uuid=%v registering..", c.Node.Uuid)
 
 	c.registrationLock.Lock()
@@ -97,7 +106,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				err = fmt.Errorf("received invalid zxid=%v", zxId)
 				return
 			}
-			log.Info("Candidate with uuid=%v has new zxId=%v", c.Node.Uuid, zxId)
+			debug("Candidate with uuid=%v has new zxId=%v", c.Node.Uuid, zxId)
 			c.zxIdLock.Lock()
 			c.zxId = zxId
 			c.zxIdLock.Unlock()
@@ -107,7 +116,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 			return
 		}
 		sort.Sort(ZxIds(children))
-		log.Debug("Candidate uuid=%v children=%v", c.Node.Uuid, children)
+		debug("Candidate uuid=%v children=%v", c.Node.Uuid, children)
 
 		if children[0] == zxId {
 			leader = c.Node
@@ -152,7 +161,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				select {
 				case result := <-asyncEnroll():
 					if result.err != nil {
-						log.Debug("Candidate with uuid=%v watcher enrollment err=%s", c.Node.Uuid, result.err)
+						debug("Candidate with uuid=%v watcher enrollment err=%s", c.Node.Uuid, result.err)
 						time.Sleep(1 * time.Second) // TODO: Definitely use backoff here.
 						continue
 					} else if result.leader != leader {
@@ -176,18 +185,18 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 			select {
 			case event, ok := <-watch:
 				if !ok {
-					log.Debug("Candidate with uuid=%v watcher detected watch chan closed, triggering enroll", c.Node.Uuid)
+					debug("Candidate with uuid=%v watcher detected watch chan closed, triggering enroll", c.Node.Uuid)
 					watch = nil
 					continue
 				}
 
 				switch event.Type {
 				case zk.EventNodeDeleted, zk.EventNotWatching, zk.EventNodeChildrenChanged:
-					log.Debug("Candidate with uuid=%v watcher received event=%+v, triggering enroll", c.Node.Uuid, event)
+					debug("Candidate with uuid=%v watcher received event=%+v, triggering enroll", c.Node.Uuid, event)
 					watch = nil
 
 				default:
-					log.Debug("Candidate with uuid=%v watcher received misc event=%+v", c.Node.Uuid, event)
+					debug("Candidate with uuid=%v watcher received misc event=%+v", c.Node.Uuid, event)
 				}
 
 			case ackCh := <-c.stopChan:

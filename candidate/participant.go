@@ -16,8 +16,7 @@ type ParticipantConfig struct {
 	ZkAddrs      []string
 	ZkTimeout    time.Duration
 	Node         *Node
-	// UpgradeFunc   func() error
-	// DowngradeFunc func() error
+	Debug        bool
 }
 
 type Event int
@@ -38,6 +37,14 @@ type Participant struct {
 }
 
 func Participate(config ParticipantConfig) (participant Participant) {
+	debug := func(format string, args ...interface{}) {
+		if config.Debug {
+			log.ExtraCalldepth++
+			log.Debug(format, args...)
+			log.ExtraCalldepth--
+		}
+	}
+
 	var (
 		candidate      = NewCandidate(config.ElectionPath, config.Node)
 		zkEvents       <-chan zk.Event
@@ -47,6 +54,8 @@ func Participate(config ParticipantConfig) (participant Participant) {
 		eventsChan     = make(chan Event, EventsChanSize)
 		stopChan       = make(chan struct{})
 	)
+
+	candidate.Debug = config.Debug
 
 	participant = Participant{
 		Config:     config,
@@ -60,7 +69,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 	Retry:
 		select {
 		case <-stopChan:
-			log.Info("Stop request received")
+			log.Debug("Stop request received")
 			return errorlib.NotRunningError
 		default:
 		}
@@ -78,7 +87,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 	}
 
 	if err := zkConnect(); err != nil {
-		log.Info("EventLoop exiting from initial connect due to stop request")
+		debug("EventLoop exiting from initial connect due to stop request")
 		return
 	}
 
@@ -87,7 +96,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 			select {
 			case leader, ok := <-leaderChan:
 				if !ok {
-					log.Notice("Leader chan closed, switching to fake leader")
+					debug("Leader chan closed, switching to fake leader")
 					leaderChan = fakeLeaderChan
 					// TODO(jet): Possibly add deregistration here?
 					continue
@@ -102,31 +111,32 @@ func Participate(config ParticipantConfig) (participant Participant) {
 
 			case event, ok := <-zkEvents: // ZooKeeper connection events.
 				if !ok {
-					log.Debug("Detected zkEvents chan close")
+					debug("Detected zkEvents chan close")
 					continue
 				}
 				if event.Err != nil {
 					log.Error("zkEvents: error: %s", event.Err)
 					continue
 				}
-				log.Debug("zkEvents: received event=%+v", event)
+				debug("zkEvents: received event=%+v", event)
 				if event.Type == zk.EventSession {
 					switch event.State {
 					case zk.StateConnected, zk.StateHasSession:
 						if event.State == zk.StateHasSession {
 							eventsChan <- ConnectedEvent
-							log.Notice("Connected state detected, state=%v type=%v", event.State.String(), event.Type)
+							debug("Connected state detected, state=%v type=%v", event.State.String(), event.Type)
 
 							newLeaderChan, err := candidate.Register(zkCli)
 							if err != nil {
 								panic(fmt.Sprintf("unexpected candidate registration failure: %s", err))
 							}
 							leaderChan = newLeaderChan
-							log.Info("Candidate registration initiated")
+							debug("Candidate registration initiated")
 						}
 
 					case zk.StateDisconnected, zk.StateExpired:
-						log.Notice("Unconnected state detected, state=%v type=%v", event.State.String(), event.Type)
+						log.Info("Disconnected from ZooKeeper")
+						debug("Unconnected state detected, state=%v type=%v", event.State.String(), event.Type)
 						eventsChan <- DisconnectedEvent
 						if candidate.Registered() {
 							if err := candidate.Unregister(); err != nil {
@@ -138,9 +148,9 @@ func Participate(config ParticipantConfig) (participant Participant) {
 
 			case <-stopChan:
 				if err := candidate.Unregister(); err != nil {
-					log.Error("Unexpected candidate unregistration failure: %s", err)
+					panic(fmt.Sprintf("unexpected candidate unregistration failure: %s", err))
 				}
-				log.Info("Participant exiting due to stop request")
+				debug("Participant exiting due to stop request")
 				return
 			}
 		}
