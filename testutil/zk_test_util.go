@@ -25,6 +25,8 @@ var (
 	portCloseWaitTimeout = 5 * time.Second
 
 	testZkClusterLock sync.Mutex
+	testAlreadyUpLock sync.Mutex
+	testAddrs         []string
 )
 
 type testLogger struct {
@@ -67,6 +69,22 @@ func (logger *testLogger) Reset() *testLogger {
 }
 
 func WithTestZkCluster(t *testing.T, size int, fn func(zkServers []string)) {
+	// Check for an already-running cluster.
+	testAlreadyUpLock.Lock()
+	var alreadyRunningServers []string
+	if len(testAddrs) > 0 {
+		if l := len(testAddrs); l != size {
+			testAlreadyUpLock.Unlock()
+			t.Fatalf("Received incompatible ZK cluster size value=%v, already running a %v node cluster", size, l)
+		}
+		alreadyRunningServers = testAddrs
+	}
+	testAlreadyUpLock.Unlock()
+	if len(alreadyRunningServers) > 0 {
+		fn(alreadyRunningServers)
+		return
+	}
+
 	var (
 		stdout      = &testLogger{t: t, prefix: "\033[90m[stdout] ", suffix: "\033[0m", bindNotifier: make(chan struct{}, 1)}
 		stderr      = &testLogger{t: t, prefix: "\033[90m[stderr] ", suffix: "\033[0m", bindNotifier: make(chan struct{}, 1)}
@@ -81,23 +99,25 @@ func WithTestZkCluster(t *testing.T, size int, fn func(zkServers []string)) {
 		}
 	)
 
+	testAlreadyUpLock.Lock()
 	testZkClusterLock.Lock()
 Retry:
 	attempts++
 	tc, err := zk.StartTestCluster(size, stdout.Reset(), stderr.Reset())
 	if err != nil {
 		testZkClusterLock.Unlock()
+		testAlreadyUpLock.Unlock()
 		t.Fatalf("Starting ZooKeeper test cluster: %s", err)
 	}
 
-	msgs := []string{fmt.Sprintf("Started ZooKeeper test cluster with %v node", len(tc.Servers))}
-	if len(tc.Servers) > 1 {
-		msgs[0] += "(s)"
-	}
+	msgs := []string{fmt.Sprintf("Started a %v node ZooKeeper test cluster", len(tc.Servers))}
+
 	for i, zkServer := range tc.Servers {
 		zkServers[i] = fmt.Sprintf("127.0.0.1:%v", zkServer.Port)
 		msgs = append(msgs, fmt.Sprintf("\tServer #%v listening on %v", i+1, zkServers[i]))
 	}
+	testAddrs = zkServers
+	testAlreadyUpLock.Unlock()
 
 	// Wait for binding to port.
 	select {
@@ -106,7 +126,8 @@ Retry:
 	case <-stderr.bindNotifier:
 		// pass
 	case <-time.After(bindWaitTimeout):
-		t.Fatalf("timed out after %s waiting for zk bind notification", bindWaitTimeout)
+		testZkClusterLock.Unlock()
+		t.Fatalf("Timed out after %s waiting for zk bind notification", bindWaitTimeout)
 	}
 	t.Log("Bind notification received")
 	time.Sleep(10 * time.Millisecond)
@@ -146,6 +167,11 @@ Retry:
 		if t.Failed() {
 			t.FailNow()
 		}
+
+		// Clear out "running test node addresses" info.
+		testAlreadyUpLock.Lock()
+		testAddrs = nil
+		testAlreadyUpLock.Unlock()
 	}()
 
 	// time.Sleep(1 * time.Second)
@@ -189,7 +215,7 @@ func waitForPortsToOpen(addressPorts []string, timeout time.Duration) error {
 						return err
 					}
 					output, err := cmd.CombinedOutput()
-					if err := isCommandNotFound(output, err); err != nil {
+					if err := IsCommandNotFound(output, err); err != nil {
 						return err
 					}
 					if err == nil { // Port is open!
@@ -239,7 +265,7 @@ func waitForPortsToClose(addressPorts []string, timeout time.Duration) error {
 					}
 					output, err := cmd.CombinedOutput()
 					if err != nil {
-						if err := isCommandNotFound(output, err); err != nil {
+						if err := IsCommandNotFound(output, err); err != nil {
 							return err
 						}
 						return nil // Port is closed!
@@ -277,49 +303,16 @@ func portCheckCmd(addressPort string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-// isCommandNotFound attempts to determine if a cmd.CombinedOutput() result
+// IsCommandNotFound attempts to determine if a cmd.CombinedOutput() result
 // contains the text "command not found" and returns an error if so.
 //
 // Used to detect unrecoverable errors.
-func isCommandNotFound(output []byte, err error) error {
+func IsCommandNotFound(output []byte, err error) error {
 	if err != nil {
-		outputStr := string(output)
-		if strings.Contains(err.Error()+outputStr, "command not found") {
+		outputStr := fmt.Sprintf("%v %v", err.Error(), string(output))
+		if strings.Contains(outputStr, "command not found") || strings.Contains(outputStr, "executable file not found in $PATH") || strings.Contains(outputStr, "no such file or directory") {
 			return fmt.Errorf("detected 'command not found' error: %s output=%q", err, outputStr)
 		}
 	}
 	return nil
-}
-
-func TestCommandNotFoundDetection(t *testing.T) {
-	testCases := []struct {
-		Cmd            *exec.Cmd
-		ExpectNotFound bool
-	}{
-		{
-			Cmd:            exec.Command("/bin/bash"),
-			ExpectNotFound: false,
-		},
-		{
-			Cmd:            exec.Command("ksadfalskdjfal99"),
-			ExpectNotFound: true,
-		},
-		{
-			Cmd:            exec.Command("/xmnv09d9asddkdka"),
-			ExpectNotFound: true,
-		},
-	}
-	for i, testCase := range testCases {
-		output, err := testCase.Cmd.CombinedOutput()
-		result := isCommandNotFound(output, err)
-		if testCase.ExpectNotFound {
-			if result == nil {
-				t.Fatalf("Expected to detect command not found but result=%v (should have been non-nil) i=%v testCase=%+v", result, i, testCase)
-			}
-		} else {
-			if result != nil {
-				t.Fatalf("Expected command found but result=%v (should have been nil) i=%v testCase=%+v", result, i, testCase)
-			}
-		}
-	}
 }
