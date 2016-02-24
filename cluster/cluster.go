@@ -248,7 +248,7 @@ func (cc *Coordinator) electionLoop() {
 				return nil
 			}
 			gentle.RetryUntilSuccess("checkLeader", operation, backoff.NewConstantBackOff(50*time.Millisecond))
-			log.Notice(cc.Id()+": checkLeader: children=%+v, stat=%+v", children, *stat)
+			log.Debug(cc.Id()+": checkLeader: children=%+v, stat=%+v", children, *stat)
 			min := -1
 			var minChild string
 			for _, child := range children {
@@ -275,7 +275,7 @@ func (cc *Coordinator) electionLoop() {
 			if err != nil {
 				log.Error(cc.Id()+": Error checking leader znode path=%v: %s", minChild, err)
 			}
-			log.Notice(cc.Id()+": Discovered leader znode at %v, data=%v stat=%+v", minChild, string(data), *stat)
+			log.Debug(cc.Id()+": Discovered leader znode at %v, data=%v stat=%+v", minChild, string(data), *stat)
 
 			var leaderNode Node
 			if err := json.Unmarshal(data, &leaderNode); err != nil {
@@ -309,7 +309,7 @@ func (cc *Coordinator) electionLoop() {
 					switch ev.State {
 					case zk.StateHasSession:
 						zxId = createElectionZNode()
-						log.Notice(cc.Id()+": new zxId=%v", zxId)
+						log.Debug(cc.Id()+": new zxId=%v", zxId)
 						setWatch()
 						checkLeader()
 					}
