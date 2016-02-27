@@ -81,8 +81,11 @@ func WithTestZkCluster(t *testing.T, size int, fn func(zkServers []string)) {
 	}
 	testAlreadyUpLock.Unlock()
 	if len(alreadyRunningServers) > 0 {
+		t.Logf("Will use already running ZooKeeper test cluster with addrs=%+v", alreadyRunningServers)
 		fn(alreadyRunningServers)
 		return
+	} else {
+		t.Logf("Launching fresh ZooKeeper test cluster")
 	}
 
 	var (
@@ -146,33 +149,6 @@ Retry:
 			t.Log(msg)
 		}
 	}
-	defer func() {
-		defer testZkClusterLock.Unlock()
-
-		if err := tc.Stop(); err != nil {
-			t.Fatalf("Stopping ZooKeeper test cluster: %s", err)
-		}
-
-		if err := waitForPortsToClose(zkServers, portCloseWaitTimeout); err != nil {
-			// Sometimes for whatever reason the processes don't get killed, hence the
-			// double-tap.
-			exec.Command("pkill", "-f", "java -jar .* server .*gozk.*").Run()
-			if err := waitForPortsToClose(zkServers, portCloseWaitTimeout); err != nil {
-				t.Fatalf("Waiting for ZooKeeper test ports to close: %s", err)
-			}
-		}
-		// Wait a little while longer to ensure the port addresses will no longer be
-		// in use.
-		time.Sleep(portCloseWaitTimeout)
-		if t.Failed() {
-			t.FailNow()
-		}
-
-		// Clear out "running test node addresses" info.
-		testAlreadyUpLock.Lock()
-		testAddrs = nil
-		testAlreadyUpLock.Unlock()
-	}()
 
 	// time.Sleep(1 * time.Second)
 	// // Verify it's still up.
@@ -181,6 +157,34 @@ Retry:
 	// }
 
 	fn(zkServers)
+
+	defer testZkClusterLock.Unlock()
+
+	if err := tc.Stop(); err != nil {
+		t.Fatalf("Stopping ZooKeeper test cluster: %s", err)
+	}
+
+	if err := waitForPortsToClose(zkServers, portCloseWaitTimeout); err != nil {
+		// Sometimes for whatever reason the processes don't get killed, hence the
+		// double-tap.
+		exec.Command("pkill", "-f", "java -jar .* server .*gozk.*").Run()
+		if err := waitForPortsToClose(zkServers, portCloseWaitTimeout); err != nil {
+			t.Fatalf("Waiting for ZooKeeper test ports to close: %s", err)
+		}
+	}
+	// Wait a little while longer to ensure the port addresses will no longer be
+	// in use.
+	time.Sleep(portCloseWaitTimeout)
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	// Clear out "running test node addresses" info.
+	testAlreadyUpLock.Lock()
+	testAddrs = nil
+	testAlreadyUpLock.Unlock()
+	t.Logf("Shut down ZooKeeper test cluster OK")
+
 }
 
 func WhenZkHasSession(zkEvents <-chan zk.Event, fn func()) {
