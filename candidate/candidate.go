@@ -89,7 +89,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 			}
 			// log.Debug("CPES for node=%v", string(data))
 			if zxId, err = conn.CreateProtectedEphemeralSequential(c.ElectionPath+"/n_", data, worldAllAcl); err != nil {
-				err = fmt.Errorf("creating protected ephemeral sequential: %s", err)
+				err = fmt.Errorf("creating protected ephemeral sequential %q: %s", c.ElectionPath, err)
 				return
 			}
 			if idx := strings.LastIndex(zxId, "/"); idx > 0 {
@@ -157,9 +157,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				select {
 				case result := <-asyncEnroll():
 					if result.err != nil {
-						if c.Debug {
-							log.Debug("[uuid=%v] Candidate watcher enrollment err=%s", c.Node.Uuid, result.err)
-						}
+						log.Error("[uuid=%v] Candidate watcher enrollment err=%s", c.Node.Uuid, result.err)
 						time.Sleep(1 * time.Second) // TODO: Definitely use backoff here.
 						continue
 					} else if result.leader != leader {
