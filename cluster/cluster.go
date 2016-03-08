@@ -56,7 +56,7 @@ type (
 )
 
 func (node Node) String() string {
-	s := fmt.Sprintf("Node{Uuid: %s, Hostname: %s}", node.Uuid.String(), node.Hostname)
+	s := fmt.Sprintf("Node{Uuid: %v, Hostname: %v}", node.Uuid.String(), node.Hostname)
 	return s
 }
 
@@ -76,7 +76,7 @@ func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElec
 	}
 	localNodeJson, err := json.Marshal(&localNode)
 	if err != nil {
-		return nil, fmt.Errorf("Coordinator.Start: failed converting localNode to JSON: %s", err)
+		return nil, fmt.Errorf("NewCoordinator: failed converting localNode to JSON: %s", err)
 	}
 
 	if subscribers == nil {
@@ -99,12 +99,12 @@ func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElec
 }
 
 func (cc *Coordinator) Start() error {
-	log.Info("Coordinator %s starting..", cc.Id())
+	log.Info("Coordinator Id=%v starting..", cc.Id())
 	cc.stateLock.Lock()
 	defer cc.stateLock.Unlock()
 
 	if cc.zkCli != nil {
-		return fmt.Errorf("%s: already started", cc.Id())
+		return fmt.Errorf("%v: already started", cc.Id())
 	}
 
 	// Assemble the cluster coordinator.
@@ -118,7 +118,7 @@ func (cc *Coordinator) Start() error {
 	// Start the election loop.
 	cc.electionLoop()
 
-	log.Info("Coordinator %s started", cc.Id())
+	log.Info("Coordinator Id=%v started", cc.Id())
 	return nil
 }
 
@@ -187,15 +187,15 @@ func (cc *Coordinator) mode() string {
 
 func (cc *Coordinator) electionLoop() {
 	createElectionZNode := func() (zxId string) {
-		log.Debug(cc.Id()+": creating election path=%v", cc.leaderElectionPath)
+		log.Debug("%v: creating election path=%v", cc.Id(), cc.leaderElectionPath)
 		strategy := backoff.NewConstantBackOff(backoffDuration)
 		zxIds := util.MustCreateP(cc.zkCli, cc.leaderElectionPath, []byte{}, 0, zk.WorldACL(zk.PermAll), strategy)
-		log.Debug(cc.Id()+": created election path, zxIds=%+v", zxIds)
+		log.Debug("%v: created election path, zxIds=%+v", cc.Id(), zxIds)
 
-		log.Debug(cc.Id() + ": creating protected ephemeral")
+		log.Debug("%v: creating protected ephemeral", cc.Id())
 		strategy = backoff.NewConstantBackOff(backoffDuration)
 		zxId = util.MustCreateProtectedEphemeralSequential(cc.zkCli, cc.leaderElectionPath+"/n_", cc.localNodeJson, zk.WorldACL(zk.PermAll), strategy)
-		log.Debug(cc.Id()+": created protected ephemeral, zxId=%v", zxId)
+		log.Debug("%v: created protected ephemeral, zxId=%v", cc.Id(), zxId)
 		return
 	}
 
@@ -209,9 +209,9 @@ func (cc *Coordinator) electionLoop() {
 			}
 			return nil
 		}
-		log.Debug(cc.Id()+": setting watch on path=%v", cc.leaderElectionPath)
+		log.Debug("%v: setting watch on path=%v", cc.Id(), cc.leaderElectionPath)
 		gentle.RetryUntilSuccess(fmt.Sprintf("%v mustSubscribe", cc.Id()), operation, backoff.NewConstantBackOff(backoffDuration))
-		log.Debug(cc.Id()+": successfully set watch on path=%v", cc.leaderElectionPath)
+		log.Debug("%v: successfully set watch on path=%v", cc.Id(), cc.leaderElectionPath)
 		return
 	}
 
@@ -226,7 +226,7 @@ func (cc *Coordinator) electionLoop() {
 
 		notifySubscribers := func(updateInfo Update) {
 			if nSub := len(cc.subscriberChans); nSub > 0 {
-				log.Debug(cc.Id()+": broadcasting leader update to %v subscribers", nSub)
+				log.Debug("%v: broadcasting leader update to %v subscribers", cc.Id(), nSub)
 				for _, subChan := range cc.subscriberChans {
 					if subChan != nil {
 						go func(subChan chan Update) {
@@ -258,7 +258,7 @@ func (cc *Coordinator) electionLoop() {
 				}
 				n, err := strconv.Atoi(pieces[1])
 				if err != nil {
-					log.Debug(cc.Id()+": Failed to parse child=%v: %s, skipping child", child, err)
+					log.Debug("%v: Failed to parse child=%v: %s, skipping child", cc.Id(), child, err)
 					continue
 				}
 				if min == -1 || n < min {
@@ -267,19 +267,19 @@ func (cc *Coordinator) electionLoop() {
 				}
 			}
 			if min == -1 {
-				log.Warning(cc.Id()+": No valid children found in children=%+v, aborting check", children)
+				log.Warning("%v: No valid children found in children=%+v, aborting check", cc.Id(), children)
 				return
 			}
 			minChild = cc.leaderElectionPath + "/" + minChild
 			data, stat, err := cc.zkCli.Get(minChild)
 			if err != nil {
-				log.Error(cc.Id()+": Error checking leader znode path=%v: %s", minChild, err)
+				log.Error("%v: Error checking leader znode path=%v: %s", cc.Id(), minChild, err)
 			}
-			log.Debug(cc.Id()+": Discovered leader znode at %v, data=%v stat=%+v", minChild, string(data), *stat)
+			log.Debug("%v: Discovered leader znode at %v, data=%v stat=%+v", cc.Id(), minChild, string(data), *stat)
 
 			var leaderNode Node
 			if err := json.Unmarshal(data, &leaderNode); err != nil {
-				log.Error(cc.Id()+": Failed parsing Node from JSON=%v: %s", string(data), err)
+				log.Error("%v: Failed parsing Node from JSON=%v: %s", cc.Id(), string(data), err)
 			}
 
 			cc.leaderLock.Lock()
@@ -297,19 +297,19 @@ func (cc *Coordinator) electionLoop() {
 			// Add a new watch as per the behavior outlined at
 			// http://zookeeper.apache.org/doc/r3.4.1/zookeeperProgrammers.html#ch_zkWatches.
 
-			// log.Debug(cc.Id() + ": watch children=%+v", children)
+			// log.Debug("%v: watch children=%+v",cc.Id(), children)
 			select {
 			case ev := <-cc.eventCh: // Watch connection events.
 				if ev.Err != nil {
-					log.Error(cc.Id()+": eventCh: error: %s", ev.Err)
+					log.Error("%v: eventCh: error: %s", cc.Id(), ev.Err)
 					continue
 				}
-				log.Debug(cc.Id()+": eventCh: received event=%+v", ev)
+				log.Debug("%v: eventCh: received event=%+v", cc.Id(), ev)
 				if ev.Type == zk.EventSession {
 					switch ev.State {
 					case zk.StateHasSession:
 						zxId = createElectionZNode()
-						log.Debug(cc.Id()+": new zxId=%v", zxId)
+						log.Debug("%v: new zxId=%v", cc.Id(), zxId)
 						setWatch()
 						checkLeader()
 					}
@@ -317,23 +317,23 @@ func (cc *Coordinator) electionLoop() {
 
 			case ev := <-childCh: // Watch election path.
 				if ev.Err != nil {
-					log.Error(cc.Id()+": childCh: watcher error %+v", ev.Err)
+					log.Error("%v: childCh: watcher error %+v", cc.Id(), ev.Err)
 				}
 				if ev.Type == zk.EventNodeChildrenChanged {
 					checkLeader()
 				}
 				setWatch()
-				log.Debug(cc.Id()+": childCh: ev.Path=%v ev=%+v", ev.Path, ev)
+				log.Debug("%v: childCh: ev.Path=%v ev=%+v", cc.Id(), ev.Path, ev)
 
 				// case <-time.After(time.Second * 5):
-				// 	log.Info(cc.Id() + ": childCh: Child watcher timed out")
+				// 	log.Info("%v: childCh: Child watcher timed out",cc.Id())
 
 			case subChan := <-cc.subAddChan: // Add subscriber chan.
-				log.Debug(cc.Id() + ": received subscriber add request")
+				log.Debug("%v: received subscriber add request", cc.Id())
 				cc.subscriberChans = append(cc.subscriberChans, subChan)
 
 			case unsubChan := <-cc.subRemoveChan: // Remove subscriber chan.
-				log.Debug(cc.Id() + ": received subscriber removal request")
+				log.Debug("%v: received subscriber removal request", cc.Id())
 				revisedChans := []chan Update{}
 				for _, ch := range cc.subscriberChans {
 					if ch != unsubChan {
@@ -343,9 +343,9 @@ func (cc *Coordinator) electionLoop() {
 				cc.subscriberChans = revisedChans
 
 			case ack := <-cc.stopChan: // Stop loop.
-				log.Debug(cc.Id() + ": election loop received stop request")
+				log.Debug("%v: election loop received stop request", cc.Id())
 				ack <- struct{}{} // Acknowledge stop.
-				log.Debug(cc.Id() + ": election loop exiting")
+				log.Debug("%v: election loop exiting", cc.Id())
 				return
 			}
 		}
