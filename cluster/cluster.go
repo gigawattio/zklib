@@ -217,8 +217,10 @@ func (cc *Coordinator) electionLoop() {
 
 	go func() {
 		// var children []string
-		var childCh <-chan zk.Event
-		var zxId string // Most recent zxid.
+		var (
+			childCh <-chan zk.Event
+			zxId    string // Most recent zxid.
+		)
 
 		setWatch := func() {
 			_ /*children*/, _, childCh = mustSubscribe(cc.leaderElectionPath)
@@ -238,19 +240,21 @@ func (cc *Coordinator) electionLoop() {
 		}
 
 		checkLeader := func() {
-			var children []string
-			var stat *zk.Stat
-			operation := func() error {
-				var err error
-				if children, stat, err = cc.zkCli.Children(cc.leaderElectionPath); err != nil {
-					return err
+			var (
+				children  []string
+				stat      *zk.Stat
+				operation = func() error {
+					var err error
+					if children, stat, err = cc.zkCli.Children(cc.leaderElectionPath); err != nil {
+						return err
+					}
+					return nil
 				}
-				return nil
-			}
+				min      = -1
+				minChild string
+			)
 			gentle.RetryUntilSuccess("checkLeader", operation, backoff.NewConstantBackOff(50*time.Millisecond))
-			log.Debug(cc.Id()+": checkLeader: children=%+v, stat=%+v", children, *stat)
-			min := -1
-			var minChild string
+			log.Debug("%v: checkLeader: children=%+v, stat=%+v", cc.Id(), children, *stat)
 			for _, child := range children {
 				pieces := strings.Split(child, "-n_")
 				if len(pieces) <= 1 {

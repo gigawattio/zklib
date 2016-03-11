@@ -109,7 +109,9 @@ Retry:
 	tc, err := zk.StartTestCluster(size, stdout.Reset(), stderr.Reset())
 	if err != nil {
 		testZkClusterLock.Unlock()
-		testAlreadyUpLock.Unlock()
+		if attempts == 1 {
+			testAlreadyUpLock.Unlock()
+		}
 		t.Fatalf("Starting ZooKeeper test cluster: %s", err)
 	}
 
@@ -120,7 +122,9 @@ Retry:
 		msgs = append(msgs, fmt.Sprintf("\tServer #%v listening on %v", i+1, zkServers[i]))
 	}
 	testAddrs = zkServers
-	testAlreadyUpLock.Unlock()
+	if attempts == 1 {
+		testAlreadyUpLock.Unlock()
+	}
 
 	// Wait for binding to port.
 	select {

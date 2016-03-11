@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"gigawatt-common/pkg/zk/cluster"
+	zkutil "gigawatt-common/pkg/zk/util"
 
 	"github.com/cenkalti/backoff"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 type DistributedMutexService struct {
-	zooKeepers    []string // ZooKeeper host/port pairs.
+	zkServers     []string // ZooKeeper host/port pairs.
 	clientTimeout time.Duration
 	basePath      string
 	coordinators  map[string]*cluster.Coordinator
@@ -25,14 +27,11 @@ var (
 	DistributedMutexNoLeader          = errors.New("DistributedMutexService: unable to obtain lock-info")
 )
 
-func NewDistributedMutexService(zooKeepers []string, clientTimeout time.Duration, basePath string) *DistributedMutexService {
-	if !strings.HasSuffix(basePath, "/") {
-		basePath += "/"
-	}
+func NewDistributedMutexService(zkServers []string, clientTimeout time.Duration, basePath string) *DistributedMutexService {
 	service := &DistributedMutexService{
-		zooKeepers:    zooKeepers,
+		zkServers:     zkServers,
 		clientTimeout: clientTimeout,
-		basePath:      basePath,
+		basePath:      zkutil.NormalizePath(basePath),
 		coordinators:  map[string]*cluster.Coordinator{},
 	}
 	return service
@@ -44,14 +43,15 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 	}
 
 	service.localLock.Lock()
-	defer service.localLock.Unlock()
+	coordinator, ok := service.coordinators[objectId]
+	service.localLock.Unlock()
 
-	if coordinator, ok := service.coordinators[objectId]; ok {
+	if ok {
 		log.Notice("Operation already in progress for objectId=%v (my mode=%v, leader=%+v)", objectId, coordinator.Mode(), coordinator.Leader())
 		return DistributedMutexAcquisitionFailed
 	} else {
-		path := service.basePath + objectId
-		coordinator, err := cluster.NewCoordinator(service.zooKeepers, service.clientTimeout, path)
+		path := fmt.Sprintf("%v/%v", service.basePath, objectId)
+		coordinator, err := cluster.NewCoordinator(service.zkServers, service.clientTimeout, path)
 		if err != nil {
 			return fmt.Errorf("DistributedMutexService lock: %s", err)
 		}
@@ -85,7 +85,13 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 			log.Notice("Operation already in progress for objectId=%v (my mode=follower, leader=%+v)", objectId, coordinator.Leader())
 			return DistributedMutexAcquisitionFailed
 		}
+		service.localLock.Lock()
+		if _, ok = service.coordinators[objectId]; ok {
+			service.localLock.Unlock()
+			return DistributedMutexAcquisitionFailed
+		}
 		service.coordinators[objectId] = coordinator
+		service.localLock.Unlock()
 
 		log.Info("[id=%v] Successfully acquired lock for objectId=%v", coordinator.Id(), objectId)
 		if expireTimeout.Nanoseconds() != int64(0) {
@@ -98,18 +104,65 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 
 func (service *DistributedMutexService) Unlock(objectId string) error {
 	service.localLock.Lock()
-	defer service.localLock.Unlock()
+	coordinator, ok := service.coordinators[objectId]
+	service.localLock.Unlock()
 
-	if coordinator, ok := service.coordinators[objectId]; ok {
+	if ok {
 		if err := coordinator.Stop(); err != nil {
 			log.Warning("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", coordinator.Id(), objectId, err)
 		}
+		service.localLock.Lock()
 		delete(service.coordinators, objectId)
+		service.localLock.Unlock()
 		log.Info("[id=%v] Lock removed for objectId=%v", coordinator.Id(), objectId)
 	} else {
-		log.Debug("No lock found for objectId=%v", objectId)
+		log.Debug("[id=%v] No lock found for objectId=%v", coordinator.Id(), objectId)
 	}
 
+	return nil
+}
+
+func (service *DistributedMutexService) Clean() error {
+	err := zkutil.WithZkSession(service.zkServers, service.clientTimeout, func(conn *zk.Conn) error {
+		path := zkutil.NormalizePath(service.basePath)
+
+		znodes, _, err := conn.Children(path)
+		if err == zk.ErrNoNode {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, znode := range znodes {
+			lockPath := fmt.Sprintf("%v/%v", zkutil.NormalizePath(path), znode)
+			children, stat, err := conn.Children(lockPath)
+			if err != nil && err == zk.ErrNoNode {
+				continue
+			} else if err != nil {
+				return err
+			} else if len(children) == 0 {
+				log.Debug("Removing %v", lockPath)
+				if err := conn.Delete(lockPath, stat.Version); err != nil {
+					if err == zk.ErrNotEmpty {
+						// Check for ZK claiming it's not empty when it actually is.
+						check, _, checkErr := conn.Children(lockPath)
+						if checkErr == nil {
+							if len(check) == 0 {
+								log.Critical("ZK is refusing to delete %q claiming it is not empty, but it appears empty; RESTARTING ZOOKEEPER SERVER IS RECOMMENDED IF THIS MESSAGE IS REPEATED ACROSS RUNS", lockPath)
+							} else {
+								continue // There is some apparent activity on the lock.
+							}
+						}
+					}
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -118,9 +171,9 @@ func (service *DistributedMutexService) autoExpire(id string, objectId string, e
 	time.Sleep(expireTimeout)
 
 	service.localLock.Lock()
-	defer service.localLock.Unlock()
-
 	coordinator, ok := service.coordinators[objectId]
+	service.localLock.Unlock()
+
 	if !ok {
 		log.Debug("[id=%v] No lock found for objectId=%v", id, objectId)
 		return
@@ -133,7 +186,9 @@ func (service *DistributedMutexService) autoExpire(id string, objectId string, e
 	if err := coordinator.Stop(); err != nil {
 		log.Warning("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", id, objectId, err)
 	}
+	service.localLock.Lock()
 	delete(service.coordinators, objectId)
+	service.localLock.Unlock()
 	log.Notice("[id=%v] Lock removed for objectId=%v", id, objectId)
 }
 
