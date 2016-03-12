@@ -122,6 +122,26 @@ func (service *DistributedMutexService) Unlock(objectId string) error {
 	return nil
 }
 
+func (service *DistributedMutexService) List() ([]string, error) {
+	mutexes := []string{}
+	err := zkutil.WithZkSession(service.zkServers, service.clientTimeout, func(conn *zk.Conn) error {
+		path := zkutil.NormalizePath(service.basePath)
+
+		var err error
+		if mutexes, _, err = conn.Children(path); err != nil {
+			if err == zk.ErrNoNode {
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return mutexes, nil
+}
+
 func (service *DistributedMutexService) Clean() error {
 	err := zkutil.WithZkSession(service.zkServers, service.clientTimeout, func(conn *zk.Conn) error {
 		path := zkutil.NormalizePath(service.basePath)
