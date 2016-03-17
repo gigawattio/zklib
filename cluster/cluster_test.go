@@ -1,16 +1,19 @@
-package cluster
+package cluster_test
 
 import (
 	"sync"
 	"testing"
 	"time"
 
+	"gigawatt-common/pkg/zk/cluster"
 	"gigawatt-common/pkg/zk/testutil"
 )
 
+var zkTimeout = 1 * time.Second
+
 // ncc creates a new Coordinator for a given test cluster.
-func ncc(t *testing.T, zkServers []string, subscribers ...chan Update) *Coordinator {
-	cc, err := NewCoordinator(zkServers, 1*time.Second, "/comorgnet/election", subscribers...)
+func ncc(t *testing.T, zkServers []string, subscribers ...chan cluster.Update) *cluster.Coordinator {
+	cc, err := cluster.NewCoordinator(zkServers, zkTimeout, "/comorgnet/election", subscribers...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,14 +23,14 @@ func ncc(t *testing.T, zkServers []string, subscribers ...chan Update) *Coordina
 	return cc
 }
 
-func Test_ClusterLeaderElection(t *testing.T) {
+func TestClusterLeaderElection(t *testing.T) {
 	// NB: tcSz == zookeeper test cluster size.
 	for _, tcSz := range []int{1} {
 		testutil.WithTestZkCluster(t, tcSz, func(zkServers []string) {
 			for _, sz := range []int{1, 2, 3, 4} {
 				t.Logf("Testing with number of cluster members sz=%v", sz)
 
-				members := make([]*Coordinator, sz)
+				members := make([]*cluster.Coordinator, sz)
 				for i := 0; i < sz; i++ {
 					cc := ncc(t, zkServers)
 					members[i] = cc
@@ -56,7 +59,7 @@ func Test_ClusterLeaderElection(t *testing.T) {
 						return
 					}
 
-					var found *Node
+					var found *cluster.Node
 					for _, member := range members {
 						if leader := member.Leader(); leader != nil {
 							found = leader
@@ -81,7 +84,7 @@ func Test_ClusterLeaderElection(t *testing.T) {
 							allMatch = false
 						}
 
-						if replaceLeader && member.Mode() == Leader {
+						if replaceLeader && member.Mode() == cluster.Leader {
 							if err := member.Stop(); err != nil {
 								t.Fatal(err)
 							}
@@ -116,10 +119,12 @@ func Test_ClusterLeaderElection(t *testing.T) {
 
 func Test_ClusterSubscriptions(t *testing.T) {
 	testutil.WithTestZkCluster(t, 1, func(zkServers []string) {
-		var lock sync.Mutex
-		numEventsReceived := 0
+		var (
+			subChan           = make(chan cluster.Update)
+			lock              sync.Mutex
+			numEventsReceived int
+		)
 
-		subChan := make(chan Update)
 		go func() {
 			for {
 				select {
@@ -169,4 +174,56 @@ func Test_ClusterSubscriptions(t *testing.T) {
 		}
 		lock.Unlock()
 	})
+}
+
+func TestClusterMembersListing(t *testing.T) {
+	for _, n := range []int{1, 2, 3, 5, 7, 11} {
+		testutil.WithZk(t, 1, "127.0.0.1:2181", func(zkServers []string) {
+			var (
+				ccs             = []*cluster.Coordinator{}
+				ready           = make(chan struct{})
+				signalWhenReady = func(ch chan cluster.Update) {
+					select {
+					case <-ch:
+						ready <- struct{}{}
+					case <-time.After(zkTimeout):
+						t.Fatalf("Timed out after %v waiting for ready signal", zkTimeout)
+					}
+				}
+			)
+
+			for i := 0; i < n; i++ {
+				subChan := make(chan cluster.Update)
+				go signalWhenReady(subChan)
+				cc := ncc(t, zkServers, subChan)
+				<-ready
+				ccs = append(ccs, cc)
+				for j := 0; j < len(ccs); j++ {
+					nodes, err := ccs[j].Members()
+					if err != nil {
+						t.Fatalf("[i=%v j=%v] %s", i, j, err)
+					}
+					if expected, actual := i+1, len(nodes); actual != expected {
+						t.Fatal("[i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", i, j, expected, actual, nodes)
+					}
+				}
+			}
+
+			for i := n - 1; i >= 0; i-- {
+				if err := ccs[i].Stop(); err != nil {
+					t.Fatal("[i=%v] %s", err)
+				}
+				ccs = ccs[0 : len(ccs)-1]
+				for j := 0; j < len(ccs); j++ {
+					nodes, err := ccs[j].Members()
+					if err != nil {
+						t.Fatalf("[i=%v j=%v] %s", i, j, err)
+					}
+					if expected, actual := i, len(nodes); actual != expected {
+						t.Fatal("[i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", i, j, expected, actual, nodes)
+					}
+				}
+			}
+		})
+	}
 }

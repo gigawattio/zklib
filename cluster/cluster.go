@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"gigawatt-common/pkg/concurrency"
 	"gigawatt-common/pkg/gentle"
 	"gigawatt-common/pkg/zk/util"
 
@@ -26,34 +27,38 @@ var (
 	backoffDuration = 50 * time.Millisecond
 )
 
-type (
-	Node struct {
-		Uuid     uuid.UUID
-		Hostname string
-	}
+type Node struct {
+	Uuid     uuid.UUID
+	Hostname string
+}
 
-	Coordinator struct {
-		zkServers          []string
-		sessionTimeout     time.Duration
-		zkCli              *zk.Conn
-		eventCh            <-chan zk.Event
-		leaderElectionPath string
-		localNode          Node
-		localNodeJson      []byte
-		leaderNode         *Node
-		leaderLock         sync.Mutex
-		stateLock          sync.Mutex
-		stopChan           chan chan struct{}
-		subscriberChans    []chan Update    // part of subscription handler.
-		subAddChan         chan chan Update // part of subscription handler.
-		subRemoveChan      chan chan Update // part of subscription handler.
-	}
+type Coordinator struct {
+	zkServers              []string
+	sessionTimeout         time.Duration
+	zkCli                  *zk.Conn
+	eventCh                <-chan zk.Event
+	leaderElectionPath     string
+	localNode              Node
+	localNodeJson          []byte
+	leaderNode             *Node
+	leaderLock             sync.Mutex
+	membershipRequestsChan chan chan clusterMembershipResponse
+	stateLock              sync.Mutex
+	stopChan               chan chan struct{}
+	subscriberChans        []chan Update    // part of subscription handler.
+	subAddChan             chan chan Update // part of subscription handler.
+	subRemoveChan          chan chan Update // part of subscription handler.
+}
 
-	Update struct {
-		Leader Node
-		Mode   string
-	}
-)
+type Update struct {
+	Leader Node
+	Mode   string
+}
+
+type clusterMembershipResponse struct {
+	nodes []Node
+	err   error
+}
 
 func (node Node) String() string {
 	s := fmt.Sprintf("Node{Uuid: %v, Hostname: %v}", node.Uuid.String(), node.Hostname)
@@ -84,15 +89,16 @@ func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElec
 	}
 
 	cc := &Coordinator{
-		zkServers:          zkServers,
-		sessionTimeout:     sessionTimeout,
-		leaderElectionPath: leaderElectionPath,
-		localNode:          localNode,
-		localNodeJson:      localNodeJson,
-		stopChan:           make(chan chan struct{}),
-		subscriberChans:    subscribers,            // part of subscription handler.
-		subAddChan:         make(chan chan Update), // part of subscription handler.
-		subRemoveChan:      make(chan chan Update), // part of subscription handler.
+		zkServers:              zkServers,
+		sessionTimeout:         sessionTimeout,
+		leaderElectionPath:     leaderElectionPath,
+		localNode:              localNode,
+		localNodeJson:          localNodeJson,
+		membershipRequestsChan: make(chan chan clusterMembershipResponse),
+		stopChan:               make(chan chan struct{}),
+		subscriberChans:        subscribers,            // part of subscription handler.
+		subAddChan:             make(chan chan Update), // part of subscription handler.
+		subRemoveChan:          make(chan chan Update), // part of subscription handler.
 	}
 
 	return cc, nil
@@ -185,6 +191,21 @@ func (cc *Coordinator) mode() string {
 	return Follower
 }
 
+func (cc *Coordinator) Members() (nodes []Node, err error) {
+	request := make(chan clusterMembershipResponse)
+	cc.membershipRequestsChan <- request
+	select {
+	case response := <-request:
+		if err = response.err; err != nil {
+			return
+		}
+		nodes = response.nodes
+	case <-time.After(cc.sessionTimeout):
+		err = fmt.Errorf("membership request timed out after %v", cc.sessionTimeout)
+	}
+	return
+}
+
 func (cc *Coordinator) electionLoop() {
 	createElectionZNode := func() (zxId string) {
 		log.Debug("%v: creating election path=%v", cc.Id(), cc.leaderElectionPath)
@@ -231,9 +252,10 @@ func (cc *Coordinator) electionLoop() {
 				log.Debug("%v: broadcasting leader update to %v subscribers", cc.Id(), nSub)
 				for _, subChan := range cc.subscriberChans {
 					if subChan != nil {
-						go func(subChan chan Update) {
-							subChan <- updateInfo
-						}(subChan)
+						select {
+						case subChan <- updateInfo:
+						default:
+						}
 					}
 				}
 			}
@@ -332,6 +354,9 @@ func (cc *Coordinator) electionLoop() {
 				// case <-time.After(time.Second * 5):
 				// 	log.Info("%v: childCh: Child watcher timed out",cc.Id())
 
+			case requestChan := <-cc.membershipRequestsChan:
+				cc.handleMembershipRequest(requestChan)
+
 			case subChan := <-cc.subAddChan: // Add subscriber chan.
 				log.Debug("%v: received subscriber add request", cc.Id())
 				cc.subscriberChans = append(cc.subscriberChans, subChan)
@@ -354,6 +379,43 @@ func (cc *Coordinator) electionLoop() {
 			}
 		}
 	}()
+}
+
+func (cc *Coordinator) handleMembershipRequest(requestChan chan clusterMembershipResponse) {
+	children, _, err := cc.zkCli.Children(cc.leaderElectionPath)
+	if err != nil {
+		requestChan <- clusterMembershipResponse{err: err}
+		return
+	}
+	var (
+		numChildren = len(children)
+		nodeGetters = make([]func() error, numChildren)
+		nodes       = make([]Node, numChildren)
+		nodesLock   sync.Mutex
+	)
+	for i, child := range children {
+		func(i int, child string) {
+			nodeGetters[i] = func() error {
+				data, _, err := cc.zkCli.Get(cc.leaderElectionPath + "/" + child)
+				if err != nil {
+					return err
+				}
+				var node Node
+				if err := json.Unmarshal(data, &node); err != nil {
+					return fmt.Errorf("decoding %v bytes of JSON for child=%v: %s", len(data), child, err)
+				}
+				nodesLock.Lock()
+				nodes[i] = node
+				nodesLock.Unlock()
+				return nil
+			}
+		}(i, child)
+	}
+	if err := concurrency.MultiGo(nodeGetters...); err != nil {
+		requestChan <- clusterMembershipResponse{err: err}
+		return
+	}
+	requestChan <- clusterMembershipResponse{nodes: nodes}
 }
 
 // Subscribe adds a channel to the slice of subscribers who get notified when
