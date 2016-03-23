@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"gigawatt-common/pkg/cluster/primitives"
 	"gigawatt-common/pkg/zk/cluster"
 	"gigawatt-common/pkg/zk/testutil"
 )
@@ -12,7 +13,7 @@ import (
 var zkTimeout = 1 * time.Second
 
 // ncc creates a new Coordinator for a given test cluster.
-func ncc(t *testing.T, zkServers []string, subscribers ...chan cluster.Update) *cluster.Coordinator {
+func ncc(t *testing.T, zkServers []string, subscribers ...chan primitives.Update) *cluster.Coordinator {
 	cc, err := cluster.NewCoordinator(zkServers, zkTimeout, "/comorgnet/election", subscribers...)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +60,7 @@ func TestClusterLeaderElection(t *testing.T) {
 						return
 					}
 
-					var found *cluster.Node
+					var found *primitives.Node
 					for _, member := range members {
 						if leader := member.Leader(); leader != nil {
 							found = leader
@@ -84,7 +85,7 @@ func TestClusterLeaderElection(t *testing.T) {
 							allMatch = false
 						}
 
-						if replaceLeader && member.Mode() == cluster.Leader {
+						if replaceLeader && member.Mode() == primitives.Leader {
 							if err := member.Stop(); err != nil {
 								t.Fatal(err)
 							}
@@ -120,7 +121,7 @@ func TestClusterLeaderElection(t *testing.T) {
 func Test_ClusterSubscriptions(t *testing.T) {
 	testutil.WithTestZkCluster(t, 1, func(zkServers []string) {
 		var (
-			subChan           = make(chan cluster.Update)
+			subChan           = make(chan primitives.Update)
 			lock              sync.Mutex
 			numEventsReceived int
 		)
@@ -182,7 +183,7 @@ func TestClusterMembersListing(t *testing.T) {
 			var (
 				ccs             = []*cluster.Coordinator{}
 				ready           = make(chan struct{})
-				signalWhenReady = func(ch chan cluster.Update) {
+				signalWhenReady = func(ch chan primitives.Update) {
 					select {
 					case <-ch:
 						ready <- struct{}{}
@@ -193,7 +194,7 @@ func TestClusterMembersListing(t *testing.T) {
 			)
 
 			for i := 0; i < n; i++ {
-				subChan := make(chan cluster.Update)
+				subChan := make(chan primitives.Update)
 				go signalWhenReady(subChan)
 				cc := ncc(t, zkServers, subChan)
 				<-ready

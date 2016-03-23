@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"gigawatt-common/pkg/cluster/primitives"
 	"gigawatt-common/pkg/concurrency"
 	"gigawatt-common/pkg/gentle"
 	"gigawatt-common/pkg/zk/util"
@@ -18,19 +19,9 @@ import (
 	"github.com/satori/go.uuid"
 )
 
-const (
-	Leader   = "leader"
-	Follower = "follower"
-)
-
 var (
 	backoffDuration = 50 * time.Millisecond
 )
-
-type Node struct {
-	Uuid     uuid.UUID
-	Hostname string
-}
 
 type Coordinator struct {
 	zkServers              []string
@@ -38,44 +29,34 @@ type Coordinator struct {
 	zkCli                  *zk.Conn
 	eventCh                <-chan zk.Event
 	leaderElectionPath     string
-	localNode              Node
+	LocalNode              primitives.Node
 	localNodeJson          []byte
-	leaderNode             *Node
+	leaderNode             *primitives.Node
 	leaderLock             sync.Mutex
 	membershipRequestsChan chan chan clusterMembershipResponse
 	stateLock              sync.Mutex
 	stopChan               chan chan struct{}
-	subscriberChans        []chan Update    // part of subscription handler.
-	subAddChan             chan chan Update // part of subscription handler.
-	subRemoveChan          chan chan Update // part of subscription handler.
-}
-
-type Update struct {
-	Leader Node
-	Mode   string
+	subscriberChans        []chan primitives.Update    // part of subscription handler.
+	subAddChan             chan chan primitives.Update // part of subscription handler.
+	subRemoveChan          chan chan primitives.Update // part of subscription handler.
 }
 
 type clusterMembershipResponse struct {
-	nodes []Node
+	nodes []primitives.Node
 	err   error
-}
-
-func (node Node) String() string {
-	s := fmt.Sprintf("Node{Uuid: %v, Hostname: %v}", node.Uuid.String(), node.Hostname)
-	return s
 }
 
 // NewCoordinator creates a new cluster client.
 //
 // leaderElectionPath is the ZooKeeper path to conduct elections under.
-func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElectionPath string, subscribers ...chan Update) (*Coordinator, error) {
+func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElectionPath string, subscribers ...chan primitives.Update) (*Coordinator, error) {
 	// Gather local node info.
 	uid := uuid.NewV4()
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("NewCoordinator: %s", err)
 	}
-	localNode := Node{
+	localNode := primitives.Node{
 		Uuid:     uid,
 		Hostname: hostname,
 	}
@@ -85,20 +66,20 @@ func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElec
 	}
 
 	if subscribers == nil {
-		subscribers = []chan Update{}
+		subscribers = []chan primitives.Update{}
 	}
 
 	cc := &Coordinator{
 		zkServers:              zkServers,
 		sessionTimeout:         sessionTimeout,
 		leaderElectionPath:     leaderElectionPath,
-		localNode:              localNode,
+		LocalNode:              localNode,
 		localNodeJson:          localNodeJson,
 		membershipRequestsChan: make(chan chan clusterMembershipResponse),
 		stopChan:               make(chan chan struct{}),
-		subscriberChans:        subscribers,            // part of subscription handler.
-		subAddChan:             make(chan chan Update), // part of subscription handler.
-		subRemoveChan:          make(chan chan Update), // part of subscription handler.
+		subscriberChans:        subscribers,                       // part of subscription handler.
+		subAddChan:             make(chan chan primitives.Update), // part of subscription handler.
+		subRemoveChan:          make(chan chan primitives.Update), // part of subscription handler.
 	}
 
 	return cc, nil
@@ -150,13 +131,13 @@ func (cc *Coordinator) Stop() error {
 }
 
 func (cc *Coordinator) Id() string {
-	id := strings.Split(cc.localNode.Uuid.String(), "-")[0]
+	id := strings.Split(cc.LocalNode.Uuid.String(), "-")[0]
 	return id
 }
 
 // Leader returns the Node representation of the current leader, or nil if there isn't one right now.
 // string if the current leader is unknown.
-func (cc *Coordinator) Leader() *Node {
+func (cc *Coordinator) Leader() *primitives.Node {
 	cc.leaderLock.Lock()
 	defer cc.leaderLock.Unlock()
 
@@ -182,16 +163,16 @@ func (cc *Coordinator) Mode() string {
 }
 func (cc *Coordinator) mode() string {
 	if cc.leaderNode == nil {
-		return Follower
+		return primitives.Follower
 	}
-	itsMe := fmt.Sprintf("%+v", cc.localNode) == fmt.Sprintf("%+v", *cc.leaderNode)
+	itsMe := fmt.Sprintf("%+v", cc.LocalNode) == fmt.Sprintf("%+v", *cc.leaderNode)
 	if itsMe {
-		return Leader
+		return primitives.Leader
 	}
-	return Follower
+	return primitives.Follower
 }
 
-func (cc *Coordinator) Members() (nodes []Node, err error) {
+func (cc *Coordinator) Members() (nodes []primitives.Node, err error) {
 	request := make(chan clusterMembershipResponse)
 	cc.membershipRequestsChan <- request
 	select {
@@ -247,7 +228,7 @@ func (cc *Coordinator) electionLoop() {
 			_ /*children*/, _, childCh = mustSubscribe(cc.leaderElectionPath)
 		}
 
-		notifySubscribers := func(updateInfo Update) {
+		notifySubscribers := func(updateInfo primitives.Update) {
 			if nSub := len(cc.subscriberChans); nSub > 0 {
 				log.Debug("%v: broadcasting leader update to %v subscribers", cc.Id(), nSub)
 				for _, subChan := range cc.subscriberChans {
@@ -303,7 +284,7 @@ func (cc *Coordinator) electionLoop() {
 			}
 			log.Debug("%v: Discovered leader znode at %v, data=%v stat=%+v", cc.Id(), minChild, string(data), *stat)
 
-			var leaderNode Node
+			var leaderNode primitives.Node
 			if err := json.Unmarshal(data, &leaderNode); err != nil {
 				log.Error("%v: Failed parsing Node from JSON=%v: %s", cc.Id(), string(data), err)
 			}
@@ -312,7 +293,7 @@ func (cc *Coordinator) electionLoop() {
 			cc.leaderNode = &leaderNode
 			cc.leaderLock.Unlock()
 
-			updateInfo := Update{
+			updateInfo := primitives.Update{
 				Leader: leaderNode,
 				Mode:   cc.mode(),
 			}
@@ -363,7 +344,7 @@ func (cc *Coordinator) electionLoop() {
 
 			case unsubChan := <-cc.subRemoveChan: // Remove subscriber chan.
 				log.Debug("%v: received subscriber removal request", cc.Id())
-				revisedChans := []chan Update{}
+				revisedChans := []chan primitives.Update{}
 				for _, ch := range cc.subscriberChans {
 					if ch != unsubChan {
 						revisedChans = append(revisedChans, ch)
@@ -390,7 +371,7 @@ func (cc *Coordinator) handleMembershipRequest(requestChan chan clusterMembershi
 	var (
 		numChildren = len(children)
 		nodeGetters = make([]func() error, numChildren)
-		nodes       = make([]Node, numChildren)
+		nodes       = make([]primitives.Node, numChildren)
 		nodesLock   sync.Mutex
 	)
 	for i, child := range children {
@@ -400,7 +381,7 @@ func (cc *Coordinator) handleMembershipRequest(requestChan chan clusterMembershi
 				if err != nil {
 					return err
 				}
-				var node Node
+				var node primitives.Node
 				if err := json.Unmarshal(data, &node); err != nil {
 					return fmt.Errorf("decoding %v bytes of JSON for child=%v: %s", len(data), child, err)
 				}
@@ -420,11 +401,11 @@ func (cc *Coordinator) handleMembershipRequest(requestChan chan clusterMembershi
 
 // Subscribe adds a channel to the slice of subscribers who get notified when
 // the leader changes.
-func (cc *Coordinator) Subscribe(subChan chan Update) {
+func (cc *Coordinator) Subscribe(subChan chan primitives.Update) {
 	cc.subAddChan <- subChan
 }
 
 // Unsubscribe removes a channel frmo the slice of subscribers.
-func (cc *Coordinator) Unsubscribe(unsubChan chan Update) {
+func (cc *Coordinator) Unsubscribe(unsubChan chan primitives.Update) {
 	cc.subRemoveChan <- unsubChan
 }

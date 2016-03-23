@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"gigawatt-common/pkg/cluster/primitives"
 	"gigawatt-common/pkg/zk/cluster"
 	zkutil "gigawatt-common/pkg/zk/util"
 
@@ -60,7 +61,7 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 		}
 
 		// Wait for there to be a leader.
-		var leader *cluster.Node
+		var leader *primitives.Node
 		waitingForLeaderSince := time.Now()
 		operation := func() error {
 			if leader = coordinator.Leader(); leader == nil {
@@ -78,7 +79,7 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 			log.Info("Obtained leader info for objectId=%v after %s", objectId, time.Now().Sub(waitingForLeaderSince))
 		}
 
-		if coordinator.Mode() != cluster.Leader {
+		if coordinator.Mode() != primitives.Leader {
 			if err := coordinator.Stop(); err != nil {
 				log.Warning("Problem stopping coordinator for objectId=%v (non-fatal, will continue): %s", objectId, err)
 			}
