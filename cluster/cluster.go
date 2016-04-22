@@ -130,9 +130,14 @@ func (cc *Coordinator) Stop() error {
 	return nil
 }
 
-func (cc *Coordinator) Id() string {
-	id := strings.Split(cc.LocalNode.Uuid.String(), "-")[0]
-	return id
+func (cc *Coordinator) Id() (id string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Warning("Recovered from panic: %s", r)
+		}
+	}()
+	id = strings.Split(cc.LocalNode.Uuid.String(), "-")[0]
+	return
 }
 
 // Leader returns the Node representation of the current leader, or nil if there isn't one right now.
