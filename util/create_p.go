@@ -45,6 +45,11 @@ func MustCreateP(conn *zk.Conn, path string, data []byte, flags int32, acl []zk.
 func MustCreateProtectedEphemeralSequential(conn *zk.Conn, path string, data []byte, acl []zk.ACL, strategy backoff.BackOff) (zxId string) {
 	var err error
 	operation := func() error {
+		if pieces := strings.Split(path, "/"); len(pieces) > 2 {
+			if _, err = CreateP(conn, strings.Join(pieces[0:len(pieces)-1], "/"), []byte{}, 0, acl); err != nil {
+				return err
+			}
+		}
 		if zxId, err = conn.CreateProtectedEphemeralSequential(path, data, acl); err != nil {
 			return err
 		}
