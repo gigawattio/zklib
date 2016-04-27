@@ -38,7 +38,7 @@ func NewDistributedMutexService(zkServers []string, clientTimeout time.Duration,
 	return service
 }
 
-func (service *DistributedMutexService) Lock(objectId string, expireTimeout time.Duration) error {
+func (service *DistributedMutexService) Lock(objectId string, data string, expireTimeout time.Duration) error {
 	if strings.Contains(objectId, "/") {
 		return fmt.Errorf("DistributedMutexService: invalid objectId=%v, must not contain '/'", objectId)
 	}
@@ -49,10 +49,10 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 
 	if ok {
 		log.Notice("Operation already in progress for objectId=%v (my mode=%v, leader=%+v)", objectId, coordinator.Mode(), coordinator.Leader())
-		return DistributedMutexAcquisitionFailed
+		return fmt.Errorf("%s: %v", DistributedMutexAcquisitionFailed, coordinator.LeaderData())
 	} else {
 		path := fmt.Sprintf("%v/%v", service.basePath, objectId)
-		coordinator, err := cluster.NewCoordinator(service.zkServers, service.clientTimeout, path)
+		coordinator, err := cluster.NewCoordinator(service.zkServers, service.clientTimeout, path, data)
 		if err != nil {
 			return fmt.Errorf("DistributedMutexService lock: %s", err)
 		}
@@ -84,12 +84,12 @@ func (service *DistributedMutexService) Lock(objectId string, expireTimeout time
 				log.Warning("Problem stopping coordinator for objectId=%v (non-fatal, will continue): %s", objectId, err)
 			}
 			log.Notice("Operation already in progress for objectId=%v (my mode=follower, leader=%+v)", objectId, coordinator.Leader())
-			return DistributedMutexAcquisitionFailed
+			return fmt.Errorf("%s: %v", DistributedMutexAcquisitionFailed, coordinator.LeaderData())
 		}
 		service.localLock.Lock()
-		if _, ok = service.coordinators[objectId]; ok {
+		if existing, ok := service.coordinators[objectId]; ok {
 			service.localLock.Unlock()
-			return DistributedMutexAcquisitionFailed
+			return fmt.Errorf("%s: %v", DistributedMutexAcquisitionFailed, existing.LeaderData())
 		}
 		service.coordinators[objectId] = coordinator
 		service.localLock.Unlock()
@@ -109,13 +109,14 @@ func (service *DistributedMutexService) Unlock(objectId string) error {
 	service.localLock.Unlock()
 
 	if ok {
+		id := coordinator.Id()
 		if err := coordinator.Stop(); err != nil {
-			log.Warning("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", coordinator.Id(), objectId, err)
+			log.Warning("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", id, objectId, err)
 		}
 		service.localLock.Lock()
 		delete(service.coordinators, objectId)
 		service.localLock.Unlock()
-		log.Info("[id=%v] Lock removed for objectId=%v", coordinator.Id(), objectId)
+		log.Info("[id=%v] Lock removed for objectId=%v", id, objectId)
 	} else {
 		log.Debug("[id=%v] No lock found for objectId=%v", coordinator.Id(), objectId)
 	}
@@ -220,4 +221,11 @@ func (service *DistributedMutexService) backoffStrategy() *backoff.ExponentialBa
 	strategy.MaxInterval = 250 * time.Millisecond
 	strategy.MaxElapsedTime = 5 * time.Second
 	return strategy
+}
+
+func IsAcquisitionFailedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.HasPrefix(err.Error(), DistributedMutexAcquisitionFailed.Error())
 }

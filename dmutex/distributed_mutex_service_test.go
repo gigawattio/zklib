@@ -21,22 +21,22 @@ func Test_DistributedMutexService(t *testing.T) {
 
 		objectId1 := "my-app-1"
 		timeout := 3 * time.Second
-		if err := service.Lock(objectId1, timeout); err != nil {
+		if err := service.Lock(objectId1, "1", timeout); err != nil {
 			t.Fatal(err)
 		}
-		if err := service.Lock(objectId1, timeout); err != dmutex.DistributedMutexAcquisitionFailed {
+		if err := service.Lock(objectId1, "2", timeout); !dmutex.IsAcquisitionFailedError(err) {
 			t.Fatalf("Locked object failure error did not match expected `dmutex.DistributedMutexAcquisitionFailed': %s", err)
 		}
 
 		objectId2 := "my-app-2"
-		if err := service.Lock(objectId2, timeout); err != nil {
+		if err := service.Lock(objectId2, "3", timeout); err != nil {
 			t.Fatal(err)
 		}
 
 		if err := service.Unlock(objectId1); err != nil {
 			t.Fatal(err)
 		}
-		if err := service.Lock(objectId1, timeout); err != nil {
+		if err := service.Lock(objectId1, "4", timeout); err != nil {
 			t.Fatal(err)
 		}
 		if err := service.Unlock(objectId1); err != nil {
@@ -83,28 +83,28 @@ func Test_DistributedMutexServiceCleaner(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := service.Lock(objectId(1), timeout); err != nil {
+		if err := service.Lock(objectId(1), "1", timeout); err != nil {
 			t.Fatal(err)
 		}
 		if err := cleanAndVerifyNumChildren(1); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := service.Lock(objectId(1), timeout); err != dmutex.DistributedMutexAcquisitionFailed {
+		if err := service.Lock(objectId(1), "2", timeout); !dmutex.IsAcquisitionFailedError(err) {
 			t.Fatalf("Locked object failure error did not match expected `dmutex.DistributedMutexAcquisitionFailed': %s", err)
 		}
 		if err := cleanAndVerifyNumChildren(1); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := service.Lock(objectId(2), timeout); err != nil {
+		if err := service.Lock(objectId(2), "3", timeout); err != nil {
 			t.Fatal(err)
 		}
 		if err := cleanAndVerifyNumChildren(2); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := service.Lock(objectId(3), timeout); err != nil {
+		if err := service.Lock(objectId(3), "4", timeout); err != nil {
 			t.Fatal(err)
 		}
 		if err := cleanAndVerifyNumChildren(3); err != nil {
@@ -125,7 +125,7 @@ func Test_DistributedMutexServiceCleaner(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := service.Lock(objectId(1), timeout); err != nil {
+		if err := service.Lock(objectId(1), "5", timeout); err != nil {
 			t.Fatal(err)
 		}
 		if err := cleanAndVerifyNumChildren(2); err != nil {

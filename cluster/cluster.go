@@ -49,7 +49,7 @@ type clusterMembershipResponse struct {
 // NewCoordinator creates a new cluster client.
 //
 // leaderElectionPath is the ZooKeeper path to conduct elections under.
-func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElectionPath string, subscribers ...chan primitives.Update) (*Coordinator, error) {
+func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElectionPath string, data string, subscribers ...chan primitives.Update) (*Coordinator, error) {
 	// Gather local node info.
 	uid := uuid.NewV4()
 	hostname, err := os.Hostname()
@@ -59,6 +59,7 @@ func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElec
 	localNode := primitives.Node{
 		Uuid:     uid,
 		Hostname: hostname,
+		Data:     data,
 	}
 	localNodeJson, err := json.Marshal(&localNode)
 	if err != nil {
@@ -152,6 +153,16 @@ func (cc *Coordinator) Leader() *primitives.Node {
 	// Make a copy of the node to protect against unexpected mutation.
 	cp := *cc.leaderNode
 	return &cp
+}
+
+func (cc *Coordinator) LeaderData() string {
+	cc.leaderLock.Lock()
+	defer cc.leaderLock.Unlock()
+
+	if cc.leaderNode == nil {
+		return ""
+	}
+	return cc.leaderNode.Data
 }
 
 // Mode returns one of:

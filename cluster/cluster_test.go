@@ -1,11 +1,13 @@
 package cluster_test
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"gigawatt-common/pkg/cluster/primitives"
+	"gigawatt-common/pkg/netlib"
 	"gigawatt-common/pkg/zk/cluster"
 	"gigawatt-common/pkg/zk/testutil"
 )
@@ -13,8 +15,8 @@ import (
 var zkTimeout = 1 * time.Second
 
 // ncc creates a new Coordinator for a given test cluster.
-func ncc(t *testing.T, zkServers []string, subscribers ...chan primitives.Update) *cluster.Coordinator {
-	cc, err := cluster.NewCoordinator(zkServers, zkTimeout, "/comorgnet/election", subscribers...)
+func ncc(t *testing.T, zkServers []string, data string, subscribers ...chan primitives.Update) *cluster.Coordinator {
+	cc, err := cluster.NewCoordinator(zkServers, zkTimeout, "/comorgnet/election", data, subscribers...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,13 +29,13 @@ func ncc(t *testing.T, zkServers []string, subscribers ...chan primitives.Update
 func TestClusterLeaderElection(t *testing.T) {
 	// NB: tcSz == zookeeper test cluster size.
 	for _, tcSz := range []int{1} {
-		testutil.WithTestZkCluster(t, tcSz, func(zkServers []string) {
+		testutil.WithZk(t, tcSz, "127.0.0.1:2181", func(zkServers []string) {
 			for _, sz := range []int{1, 2, 3, 4} {
 				t.Logf("Testing with number of cluster members sz=%v", sz)
 
 				members := make([]*cluster.Coordinator, sz)
 				for i := 0; i < sz; i++ {
-					cc := ncc(t, zkServers)
+					cc := ncc(t, zkServers, fmt.Sprintf("i=%v", i))
 					members[i] = cc
 
 					go func(i int) {
@@ -55,6 +57,9 @@ func TestClusterLeaderElection(t *testing.T) {
 				t.Logf("done sleeping")
 
 				verifyState := func(replaceLeader bool) {
+					var retried bool
+				Retry:
+
 					if len(members) == 0 {
 						t.Logf("members was empty, returning early")
 						return
@@ -68,7 +73,22 @@ func TestClusterLeaderElection(t *testing.T) {
 						}
 					}
 					if found == nil {
-						t.Fatalf("No leader found on any of the cluster nodes, is zookeeper even running?")
+						var reachable bool
+						for _, zkServer := range zkServers {
+							reachable = netlib.IsTcpPortReachable(zkServer)
+							t.Logf("zkServer addr=%v is-reachable=%v", zkServer, reachable)
+							if reachable {
+								break
+							}
+						}
+						if retried || !reachable {
+							t.Fatalf("No leader found on any of the cluster nodes, is zookeeper running?")
+						} else {
+							log.Notice("Will retry state verification after waiting 1s")
+							time.Sleep(1 * time.Second)
+							retried = true
+							goto Retry
+						}
 					}
 
 					expectedLeaderStr := found.String()
@@ -89,7 +109,7 @@ func TestClusterLeaderElection(t *testing.T) {
 							if err := member.Stop(); err != nil {
 								t.Fatal(err)
 							}
-							members[i] = ncc(t, zkServers)
+							members[i] = ncc(t, zkServers, fmt.Sprintf("i=%v", i))
 							t.Logf("Shut down leader member=%s and launched new one=%s", member.Id(), members[i].Id())
 						}
 					}
@@ -138,7 +158,7 @@ func Test_ClusterSubscriptions(t *testing.T) {
 			}
 		}()
 
-		cc := ncc(t, zkServers, subChan)
+		cc := ncc(t, zkServers, "primary-cc", subChan)
 
 		defer func() {
 			if err := cc.Stop(); err != nil {
@@ -196,7 +216,7 @@ func TestClusterMembersListing(t *testing.T) {
 			for i := 0; i < n; i++ {
 				subChan := make(chan primitives.Update)
 				go signalWhenReady(subChan)
-				cc := ncc(t, zkServers, subChan)
+				cc := ncc(t, zkServers, fmt.Sprintf("i=%v", i), subChan)
 				<-ready
 				ccs = append(ccs, cc)
 				for j := 0; j < len(ccs); j++ {
@@ -205,7 +225,7 @@ func TestClusterMembersListing(t *testing.T) {
 						t.Fatalf("[i=%v j=%v] %s", i, j, err)
 					}
 					if expected, actual := i+1, len(nodes); actual != expected {
-						t.Fatal("[i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", i, j, expected, actual, nodes)
+						t.Fatalf("[i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", i, j, expected, actual, nodes)
 					}
 				}
 			}
