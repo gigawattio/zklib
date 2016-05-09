@@ -46,7 +46,8 @@ func MustCreateProtectedEphemeralSequential(conn *zk.Conn, path string, data []b
 	var err error
 	operation := func() error {
 		if pieces := strings.Split(path, "/"); len(pieces) > 2 {
-			if _, err = CreateP(conn, strings.Join(pieces[0:len(pieces)-1], "/"), []byte{}, 0, acl); err != nil {
+			basePath := strings.Join(pieces[0:len(pieces)-1], "/")
+			if _, err = CreateP(conn, basePath, []byte{}, 0, acl); err != nil {
 				return err
 			}
 		}
@@ -55,6 +56,6 @@ func MustCreateProtectedEphemeralSequential(conn *zk.Conn, path string, data []b
 		}
 		return nil
 	}
-	gentle.RetryUntilSuccess(fmt.Sprintf("conn=%p MustCreateProtectedEphemeralSequential", conn), operation, strategy)
+	gentle.RetryUntilSuccess(fmt.Sprintf("MustCreateProtectedEphemeralSequential conn=%p path=%v", conn, path), operation, strategy)
 	return
 }
