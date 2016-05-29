@@ -159,7 +159,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 					log.Debug("[uuid=%v] Participant exiting due to stop request", candidate.Node.Uuid)
 				}
 				if err := candidate.Unregister(); err != nil && config.Debug {
-					log.Debug("Unexpected candidate unregistration failure: %s", err)
+					log.Warning("Unexpected candidate unregistration failure: %s", err)
 				}
 				return
 			}
