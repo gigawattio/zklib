@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"gigawatt-common/pkg/zk/testutil"
-	"gigawatt-common/pkg/zk/util"
+	"github.com/gigawattio/zklib/testutil"
+	"github.com/gigawattio/zklib/util"
 
 	"github.com/cenkalti/backoff"
 	"github.com/samuel/go-zookeeper/zk"

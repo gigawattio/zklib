@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"gigawatt-common/pkg/logginglib"
-	"gigawatt-common/pkg/zk/candidate"
-	zktestutil "gigawatt-common/pkg/zk/testutil"
-	zkutil "gigawatt-common/pkg/zk/util"
+	"github.com/gigawattio/zklib/candidate"
+	zktestutil "github.com/gigawattio/zklib/testutil"
+	zkutil "github.com/gigawattio/zklib/util"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/kr/pretty"
 	"github.com/montanaflynn/stats"
 	"github.com/samuel/go-zookeeper/zk"
@@ -27,10 +27,6 @@ var (
 	zkTimeout       = 5 * time.Second
 	zkDeleteRetries = 10
 )
-
-func init() {
-	logginglib.InitializeFormat()
-}
 
 func TestCandidateRegistration(t *testing.T) {
 	zktestutil.WithZk(t, 1, "127.0.0.1:2181", func(zkServers []string) {
@@ -69,7 +65,7 @@ func TestCandidateLeadershipRetention(t *testing.T) {
 	iterations := 5
 	for _, n := range []int{1, 2, 3, 5, 7} {
 		for i := 0; i < iterations; i++ {
-			log.Notice("Starting leadership retention test iteration #%v/%v for n=%v", i+1, iterations, n)
+			log.Infof("Starting leadership retention test iteration #%v/%v for n=%v", i+1, iterations, n)
 			t.Logf("Starting leadership retention test iteration #%v/%v for n=%v", i+1, iterations, n)
 			candidateConsensusTestCase(t, n, true)
 			if t.Failed() {
@@ -147,7 +143,7 @@ func TestCandidateConsensusRigorously(t *testing.T) {
 		}()
 
 		for i := 0; i < iterations; i++ {
-			log.Notice("Starting rigorous consensus test iteration #%v/%v with n=%v", i+1, iterations, n)
+			log.Infof("Starting rigorous consensus test iteration #%v/%v with n=%v", i+1, iterations, n)
 			t.Logf("Starting rigorous consensus test iteration #%v/%v with n=%v", i+1, iterations, n)
 			attempts, duration := candidateConsensusTestCase(t, n, false)
 			if t.Failed() {
@@ -169,7 +165,7 @@ func TestCandidateConsensusRigorously(t *testing.T) {
 	n = 7
 
 	if testing.Short() {
-		log.Warning("Shortening test run time: skipping run with iterations=%v n=%v", iterations, n)
+		log.Warnf("Shortening test run time: skipping run with iterations=%v n=%v", iterations, n)
 	} else {
 		run(iterations, n)
 	}
@@ -179,7 +175,7 @@ func TestCandidateConsensusRigorously(t *testing.T) {
 	n = 3
 
 	if testing.Short() {
-		log.Warning("Shortening test run time: skipping run with iterations=%v n=%v", iterations, n)
+		log.Warnf("Shortening test run time: skipping run with iterations=%v n=%v", iterations, n)
 	} else {
 		run(iterations, n)
 	}
@@ -264,7 +260,7 @@ func candidateConsensusTestCase(t *testing.T, n int, firstCandidateShouldLead bo
 				// Unregister and re-register all candidates but the first in a
 				// randomized order.
 				randSeed = time.Now().UnixNano()
-				log.Info("randSeed=%v", randSeed)
+				log.Infof("randSeed=%v", randSeed)
 				t.Logf("randSeed=%v", randSeed)
 				rand.Seed(randSeed)
 
@@ -287,7 +283,7 @@ func candidateConsensusTestCase(t *testing.T, n int, firstCandidateShouldLead bo
 					}
 					leaderChans[index] = leaderChan
 					time.Sleep(5 * time.Millisecond)
-					log.Info("re-registered candidates[%v]", index)
+					log.Infof("re-registered candidates[%v]", index)
 					numReregistered++
 				}
 			}
@@ -298,7 +294,7 @@ func candidateConsensusTestCase(t *testing.T, n int, firstCandidateShouldLead bo
 		go func() {
 			for {
 				if len(updateReceivedFrom) == n {
-					log.Debug("Sending signal to heardFromEveryone")
+					log.Debugf("Sending signal to heardFromEveryone")
 					t.Log("Sending signal to heardFromEveryone")
 					heardFromEveryone <- struct{}{}
 					return
@@ -331,7 +327,7 @@ func candidateConsensusTestCase(t *testing.T, n int, firstCandidateShouldLead bo
 							select {
 							case leadersSignals <- i:
 							default:
-								log.Warning("Warning: Signal tick not received for leaderChan transmitter i=%v", i)
+								log.Warnf("Warning: Signal tick not received for leaderChan transmitter i=%v", i)
 								t.Logf("Warning: Signal tick not received for leaderChan transmitter i=%v", i)
 							}
 						}

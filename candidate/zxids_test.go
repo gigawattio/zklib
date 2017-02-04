@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"gigawatt-common/pkg/zk/candidate"
+	"github.com/gigawattio/zklib/candidate"
 )
 
 func TestZxIdsSort(t *testing.T) {

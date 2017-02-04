@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	zkutil "gigawatt-common/pkg/zk/util"
+	zkutil "github.com/gigawattio/zklib/util"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -23,12 +24,12 @@ func WithZk(t *testing.T, size int, defaultServer string, fn func(zkServers []st
 	if len(defaultServer) > 0 {
 		checkCmd := exec.Command("nc", append([]string{"-w", "1"}, strings.Split(defaultServer, ":")...)...)
 		if err := checkCmd.Run(); err == nil {
-			log.Info("Using already-running default ZooKeeper@%v", defaultServer)
+			log.Infof("Using already-running default ZooKeeper@%v", defaultServer)
 			fn([]string{defaultServer})
 			return
 		}
 	}
-	log.Info("Starting a new ZooKeeper test cluster..")
+	log.Infof("Starting a new ZooKeeper test cluster..")
 	WithTestZkCluster(t, size, func(zkServers []string) {
 		time.Sleep(100 * time.Millisecond) // Give ZooKeeper a moment to start up.
 		fn(zkServers)

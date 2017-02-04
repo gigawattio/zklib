@@ -4,7 +4,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"gigawatt-common/pkg/zk/testutil"
+	"github.com/gigawattio/zklib/testutil"
 )
 
 func TestNestedUsage(t *testing.T) {

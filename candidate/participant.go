@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"gigawatt-common/pkg/errorlib"
+	"github.com/gigawattio/errorlib"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -56,13 +57,13 @@ func Participate(config ParticipantConfig) (participant Participant) {
 	}
 
 	zkConnect := func() error {
-		log.Info("[uuid=%v] Connecting to ZooKeeper servers=%v", candidate.Node.Uuid, config.ZkAddrs)
+		log.Infof("[uuid=%v] Connecting to ZooKeeper servers=%v", candidate.Node.Uuid, config.ZkAddrs)
 
 	Retry:
 		select {
 		case <-stopChan:
 			if config.Debug {
-				log.Debug("Stop request received")
+				log.Debugf("Stop request received")
 			}
 			return errorlib.NotRunningError
 		default:
@@ -74,7 +75,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 			time.Sleep(1 * time.Second) // TODO: Use backoff here.
 			goto Retry
 		}
-		log.Info("[uuid=%v] Opened connection to ZooKeeper", candidate.Node.Uuid)
+		log.Infof("[uuid=%v] Opened connection to ZooKeeper", candidate.Node.Uuid)
 		zkCli = conn
 		zkEvents = events
 		return nil
@@ -82,7 +83,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 
 	if err := zkConnect(); err != nil {
 		if config.Debug {
-			log.Debug("[uuid=%v] EventLoop exiting from initial connect due to stop request", candidate.Node.Uuid)
+			log.Debugf("[uuid=%v] EventLoop exiting from initial connect due to stop request", candidate.Node.Uuid)
 		}
 		return
 	}
@@ -93,14 +94,14 @@ func Participate(config ParticipantConfig) (participant Participant) {
 			case leader, ok := <-leaderChan:
 				if !ok {
 					if config.Debug {
-						log.Debug("[uuid=%v] Leader chan closed, switching to fake leader", candidate.Node.Uuid)
+						log.Debugf("[uuid=%v] Leader chan closed, switching to fake leader", candidate.Node.Uuid)
 					}
 					leaderChan = fakeLeaderChan
 					// TODO(jet): Possibly add deregistration here?
 					continue
 				}
 
-				log.Notice("[uuid=%v] New leader received: %+v", candidate.Node.Uuid, leader)
+				log.Infof("[uuid=%v] New leader received: %+v", candidate.Node.Uuid, leader)
 				if leader == candidate.Node {
 					eventsChan <- LeaderUpgradeEvent
 				} else {
@@ -110,7 +111,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 			case event, ok := <-zkEvents: // ZooKeeper connection events.
 				if !ok {
 					if config.Debug {
-						log.Debug("[uuid=%v] Detected zkEvents chan close", candidate.Node.Uuid)
+						log.Debugf("[uuid=%v] Detected zkEvents chan close", candidate.Node.Uuid)
 					}
 					continue
 				}
@@ -119,7 +120,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 					continue
 				}
 				if config.Debug {
-					log.Debug("[uuid=%v] zkEvents: received event=%+v", candidate.Node.Uuid, event)
+					log.Debugf("[uuid=%v] zkEvents: received event=%+v", candidate.Node.Uuid, event)
 				}
 				if event.Type == zk.EventSession {
 					switch event.State {
@@ -127,7 +128,7 @@ func Participate(config ParticipantConfig) (participant Participant) {
 						if event.State == zk.StateHasSession {
 							eventsChan <- ConnectedEvent
 							if config.Debug {
-								log.Debug("[uuid=%v] Connected state detected, state=%v type=%v", candidate.Node.Uuid, event.State.String(), event.Type)
+								log.Debugf("[uuid=%v] Connected state detected, state=%v type=%v", candidate.Node.Uuid, event.State.String(), event.Type)
 							}
 
 							newLeaderChan, err := candidate.Register(zkCli)
@@ -136,14 +137,14 @@ func Participate(config ParticipantConfig) (participant Participant) {
 							}
 							leaderChan = newLeaderChan
 							if config.Debug {
-								log.Debug("[uuid=%v] Candidate registration initiated", candidate.Node.Uuid)
+								log.Debugf("[uuid=%v] Candidate registration initiated", candidate.Node.Uuid)
 							}
 						}
 
 					case zk.StateDisconnected, zk.StateExpired:
-						log.Info("[uuid=%v] Disconnected from ZooKeeper", candidate.Node.Uuid)
+						log.Infof("[uuid=%v] Disconnected from ZooKeeper", candidate.Node.Uuid)
 						if config.Debug {
-							log.Debug("[uuid=%v] Unconnected state detected, state=%v type=%v", candidate.Node.Uuid, event.State.String(), event.Type)
+							log.Debugf("[uuid=%v] Unconnected state detected, state=%v type=%v", candidate.Node.Uuid, event.State.String(), event.Type)
 						}
 						eventsChan <- DisconnectedEvent
 						if candidate.Registered() {
@@ -156,10 +157,10 @@ func Participate(config ParticipantConfig) (participant Participant) {
 
 			case <-stopChan:
 				if config.Debug {
-					log.Debug("[uuid=%v] Participant exiting due to stop request", candidate.Node.Uuid)
+					log.Debugf("[uuid=%v] Participant exiting due to stop request", candidate.Node.Uuid)
 				}
 				if err := candidate.Unregister(); err != nil && config.Debug {
-					log.Warning("Unexpected candidate unregistration failure: %s", err)
+					log.Warnf("Unexpected candidate unregistration failure: %s", err)
 				}
 				return
 			}

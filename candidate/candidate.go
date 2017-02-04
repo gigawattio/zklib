@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"gigawatt-common/pkg/concurrency"
-	zkutil "gigawatt-common/pkg/zk/util"
+	"github.com/gigawattio/concurrency"
+	zkutil "github.com/gigawattio/zklib/util"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -57,7 +58,7 @@ func (c *Candidate) Registered() bool {
 }
 
 func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
-	log.Info("[uuid=%v] Candidate registering..", c.Node.Uuid)
+	log.Infof("[uuid=%v] Candidate registering..", c.Node.Uuid)
 
 	c.registrationLock.Lock()
 	defer c.registrationLock.Unlock()
@@ -68,7 +69,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 	c.registered = true
 
 	enroll := func() (leader *Node, watch <-chan zk.Event, err error) {
-		log.Info("[uuid=%v] Candidate enrolling..", c.Node.Uuid)
+		log.Infof("[uuid=%v] Candidate enrolling..", c.Node.Uuid)
 
 		var (
 			zxId     string
@@ -87,7 +88,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				err = fmt.Errorf("serializing node data: %s", err)
 				return
 			}
-			// log.Debug("CPES for node=%v", string(data))
+			// log.Debugf("CPES for node=%v", string(data))
 			if zxId, err = conn.CreateProtectedEphemeralSequential(c.ElectionPath+"/n_", data, worldAllAcl); err != nil {
 				err = fmt.Errorf("creating protected ephemeral sequential %q: %s", c.ElectionPath, err)
 				return
@@ -99,7 +100,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				return
 			}
 			if c.Debug {
-				log.Debug("[uuid=%v] Candidate has new zxId=%v", c.Node.Uuid, zxId)
+				log.Debugf("[uuid=%v] Candidate has new zxId=%v", c.Node.Uuid, zxId)
 			}
 			c.zxIdLock.Lock()
 			c.zxId = zxId
@@ -111,7 +112,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 		}
 		sort.Sort(ZxIds(children))
 		if c.Debug {
-			log.Debug("[uuid=%v] Candidate children=%v", c.Node.Uuid, children)
+			log.Debugf("[uuid=%v] Candidate children=%v", c.Node.Uuid, children)
 		}
 
 		if children[0] == zxId {
@@ -120,7 +121,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 			return
 		}
 
-		log.Info("[uuid=%v] Candidate enrolled OK", c.Node.Uuid)
+		log.Infof("[uuid=%v] Candidate enrolled OK", c.Node.Uuid)
 		return
 	}
 
@@ -182,7 +183,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 			case event, ok := <-watch:
 				if !ok {
 					if c.Debug {
-						log.Debug("[uuid=%v] Candidate watcher detected watch chan closed, triggering enroll", c.Node.Uuid)
+						log.Debugf("[uuid=%v] Candidate watcher detected watch chan closed, triggering enroll", c.Node.Uuid)
 					}
 					watch = nil
 					continue
@@ -191,13 +192,13 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				switch event.Type {
 				case zk.EventNodeDeleted, zk.EventNotWatching, zk.EventNodeChildrenChanged:
 					if c.Debug {
-						log.Debug("[uuid=%v] Candidate watcher received event=%+v, triggering enroll", c.Node.Uuid, event)
+						log.Debugf("[uuid=%v] Candidate watcher received event=%+v, triggering enroll", c.Node.Uuid, event)
 					}
 					watch = nil
 
 				default:
 					if c.Debug {
-						log.Debug("[uuid=%v] Candidate watcher received misc event=%+v", c.Node.Uuid, event)
+						log.Debugf("[uuid=%v] Candidate watcher received misc event=%+v", c.Node.Uuid, event)
 					}
 				}
 
@@ -210,7 +211,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 		}
 	}()
 
-	log.Info("[uuid=%v] Candidate registered OK", c.Node.Uuid)
+	log.Infof("[uuid=%v] Candidate registered OK", c.Node.Uuid)
 	return leaderChan, nil
 }
 
@@ -221,20 +222,20 @@ func (c *Candidate) wipeZxId(conn *zk.Conn) {
 	path := c.ElectionPath + "/" + c.zxId
 	exists, stat, err := conn.Exists(path)
 	if err != nil {
-		log.Warning("[uuid=%v] Candidate zxId=%v deletion skipped due to existence check err=%s", c.Node.Uuid, c.zxId, err)
+		log.Warnf("[uuid=%v] Candidate zxId=%v deletion skipped due to existence check err=%s", c.Node.Uuid, c.zxId, err)
 	} else if exists {
 		if err = conn.Delete(path, stat.Version); err != nil {
-			log.Warning("[uuid=%v] Candidate zxId=%v deletion failed due to delete err=%s", c.Node.Uuid, c.zxId, err)
+			log.Warnf("[uuid=%v] Candidate zxId=%v deletion failed due to delete err=%s", c.Node.Uuid, c.zxId, err)
 		} else {
-			log.Info("[uuid=%v] Candidate successfully deleted zxId path=%v", c.Node.Uuid, path)
+			log.Infof("[uuid=%v] Candidate successfully deleted zxId path=%v", c.Node.Uuid, path)
 		}
 	} else {
-		log.Info("[uuid=%v] Candidate zxId=%v deletion skipped due to !exists", c.Node.Uuid, c.zxId)
+		log.Infof("[uuid=%v] Candidate zxId=%v deletion skipped due to !exists", c.Node.Uuid, c.zxId)
 	}
 }
 
 func (c *Candidate) Unregister() error {
-	log.Info("[uuid=%v] Candidate unregistering..", c.Node.Uuid)
+	log.Infof("[uuid=%v] Candidate unregistering..", c.Node.Uuid)
 
 	c.registrationLock.Lock()
 	defer c.registrationLock.Unlock()
@@ -248,7 +249,7 @@ func (c *Candidate) Unregister() error {
 	c.stopChan <- ackCh
 	<-ackCh
 
-	log.Info("[uuid=%v] Candidate unregistered", c.Node.Uuid)
+	log.Infof("[uuid=%v] Candidate unregistered", c.Node.Uuid)
 	return nil
 }
 

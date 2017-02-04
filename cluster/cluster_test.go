@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"gigawatt-common/pkg/cluster/primitives"
-	"gigawatt-common/pkg/netlib"
-	"gigawatt-common/pkg/zk/cluster"
-	"gigawatt-common/pkg/zk/testutil"
+	log "github.com/Sirupsen/logrus"
+	"github.com/gigawattio/netlib"
+	"github.com/gigawattio/zklib/cluster"
+	"github.com/gigawattio/zklib/cluster/primitives"
+	"github.com/gigawattio/zklib/testutil"
 )
 
 var zkTimeout = 1 * time.Second
@@ -84,7 +85,7 @@ func TestClusterLeaderElection(t *testing.T) {
 						if retried || !reachable {
 							t.Fatalf("No leader found on any of the cluster nodes, is zookeeper running?")
 						} else {
-							log.Notice("Will retry state verification after waiting 1s")
+							log.Infof("Will retry state verification after waiting 1s")
 							time.Sleep(1 * time.Second)
 							retried = true
 							goto Retry
@@ -150,7 +151,7 @@ func Test_ClusterSubscriptions(t *testing.T) {
 			for {
 				select {
 				case updateInfo := <-subChan:
-					log.Info("New update=%+v", updateInfo)
+					log.Infof("New update=%+v", updateInfo)
 					lock.Lock()
 					numEventsReceived++
 					lock.Unlock()

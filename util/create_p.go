@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gigawatt-common/pkg/gentle"
+	"github.com/gigawattio/gentle"
 
 	"github.com/cenkalti/backoff"
 	"github.com/samuel/go-zookeeper/zk"

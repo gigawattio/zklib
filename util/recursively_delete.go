@@ -3,8 +3,9 @@ package util
 import (
 	"time"
 
-	"gigawatt-common/pkg/concurrency"
+	"github.com/gigawattio/concurrency"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -31,7 +32,7 @@ func RecursivelyDelete(conn *zk.Conn, path string, numRetries ...int) error {
 						if err = wipe(conn, path+"/"+child); err != nil {
 							if (err == zk.ErrConnectionClosed || err == zk.ErrNotEmpty) && len(numRetries) > 0 && numRetries[0] > attempt {
 								attempt++
-								log.Notice("Retrying failed deletion attempt #%v", attempt)
+								log.Infof("Retrying failed deletion attempt #%v", attempt)
 								time.Sleep(1 * time.Millisecond)
 								goto Retry
 							}

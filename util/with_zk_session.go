@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -22,7 +23,7 @@ func WithZkSession(zkServers []string, zkTimeout time.Duration, callbackFunc fun
 			if ev.Err != nil {
 				return fmt.Errorf("eventCh: %s", err)
 			}
-			log.Debug("eventCh: received event=%+v", ev)
+			log.Debugf("eventCh: received event=%+v", ev)
 			if ev.Type == zk.EventSession {
 				switch ev.State {
 				case zk.StateHasSession:

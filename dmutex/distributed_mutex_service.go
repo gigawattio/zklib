@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"gigawatt-common/pkg/cluster/primitives"
-	"gigawatt-common/pkg/zk/cluster"
-	zkutil "gigawatt-common/pkg/zk/util"
+	"github.com/gigawattio/zklib/cluster"
+	"github.com/gigawattio/zklib/cluster/primitives"
+	zkutil "github.com/gigawattio/zklib/util"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/cenkalti/backoff"
 	"github.com/samuel/go-zookeeper/zk"
 )
@@ -48,7 +49,7 @@ func (service *DistributedMutexService) Lock(objectId string, data string, expir
 	service.localLock.Unlock()
 
 	if ok {
-		log.Notice("Operation already in progress for objectId=%v (my mode=%v, leader=%+v)", objectId, coordinator.Mode(), coordinator.Leader())
+		log.Infof("Operation already in progress for objectId=%v (my mode=%v, leader=%+v)", objectId, coordinator.Mode(), coordinator.Leader())
 		return fmt.Errorf("%s: %v", DistributedMutexAcquisitionFailed, coordinator.LeaderData())
 	} else {
 		path := fmt.Sprintf("%v/%v", service.basePath, objectId)
@@ -70,20 +71,20 @@ func (service *DistributedMutexService) Lock(objectId string, data string, expir
 			return nil
 		}
 		if err := backoff.Retry(operation, service.backoffStrategy()); err != nil {
-			log.Warning("Failed to obtain leader info for objectId=%v after %s", objectId, time.Now().Sub(waitingForLeaderSince))
+			log.Warnf("Failed to obtain leader info for objectId=%v after %s", objectId, time.Now().Sub(waitingForLeaderSince))
 			if err := coordinator.Stop(); err != nil {
-				log.Warning("Problem stopping coordinator for objectId=%v (non-fatal, will continue): %s", objectId, err)
+				log.Warnf("Problem stopping coordinator for objectId=%v (non-fatal, will continue): %s", objectId, err)
 			}
 			return DistributedMutexNoLeader
 		} else {
-			log.Info("Obtained leader info for objectId=%v after %s", objectId, time.Now().Sub(waitingForLeaderSince))
+			log.Infof("Obtained leader info for objectId=%v after %s", objectId, time.Now().Sub(waitingForLeaderSince))
 		}
 
 		if coordinator.Mode() != primitives.Leader {
 			if err := coordinator.Stop(); err != nil {
-				log.Warning("Problem stopping coordinator for objectId=%v (non-fatal, will continue): %s", objectId, err)
+				log.Warnf("Problem stopping coordinator for objectId=%v (non-fatal, will continue): %s", objectId, err)
 			}
-			log.Notice("Operation already in progress for objectId=%v (my mode=follower, leader=%+v)", objectId, coordinator.Leader())
+			log.Infof("Operation already in progress for objectId=%v (my mode=follower, leader=%+v)", objectId, coordinator.Leader())
 			return fmt.Errorf("%s: %v", DistributedMutexAcquisitionFailed, coordinator.LeaderData())
 		}
 		service.localLock.Lock()
@@ -94,7 +95,7 @@ func (service *DistributedMutexService) Lock(objectId string, data string, expir
 		service.coordinators[objectId] = coordinator
 		service.localLock.Unlock()
 
-		log.Info("[id=%v] Successfully acquired lock for objectId=%v", coordinator.Id(), objectId)
+		log.Infof("[id=%v] Successfully acquired lock for objectId=%v", coordinator.Id(), objectId)
 		if expireTimeout.Nanoseconds() != int64(0) {
 			go service.autoExpire(coordinator.Id(), objectId, expireTimeout)
 		}
@@ -111,14 +112,14 @@ func (service *DistributedMutexService) Unlock(objectId string) error {
 	if ok {
 		id := coordinator.Id()
 		if err := coordinator.Stop(); err != nil {
-			log.Warning("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", id, objectId, err)
+			log.Warnf("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", id, objectId, err)
 		}
 		service.localLock.Lock()
 		delete(service.coordinators, objectId)
 		service.localLock.Unlock()
-		log.Info("[id=%v] Lock removed for objectId=%v", id, objectId)
+		log.Infof("[id=%v] Lock removed for objectId=%v", id, objectId)
 	} else {
-		log.Debug("[id=%v] No lock found for objectId=%v", coordinator.Id(), objectId)
+		log.Debugf("[id=%v] No lock found for objectId=%v", coordinator.Id(), objectId)
 	}
 
 	return nil
@@ -163,14 +164,14 @@ func (service *DistributedMutexService) Clean() error {
 			} else if err != nil {
 				return err
 			} else if len(children) == 0 {
-				log.Debug("Removing %v", lockPath)
+				log.Debugf("Removing %v", lockPath)
 				if err := conn.Delete(lockPath, stat.Version); err != nil {
 					if err == zk.ErrNotEmpty {
 						// Check for ZK claiming it's not empty when it actually is.
 						check, _, checkErr := conn.Children(lockPath)
 						if checkErr == nil {
 							if len(check) == 0 {
-								log.Critical("ZK is refusing to delete %q claiming it is not empty, but it appears empty; RESTARTING ZOOKEEPER SERVER IS RECOMMENDED IF THIS MESSAGE IS REPEATED ACROSS RUNS", lockPath)
+								log.Errorf("ZK is refusing to delete %q claiming it is not empty, but it appears empty; RESTARTING ZOOKEEPER SERVER IS RECOMMENDED IF THIS MESSAGE IS REPEATED ACROSS RUNS", lockPath)
 							} else {
 								continue // There is some apparent activity on the lock.
 							}
@@ -197,21 +198,21 @@ func (service *DistributedMutexService) autoExpire(id string, objectId string, e
 	service.localLock.Unlock()
 
 	if !ok {
-		log.Debug("[id=%v] No lock found for objectId=%v", id, objectId)
+		log.Debugf("[id=%v] No lock found for objectId=%v", id, objectId)
 		return
 	}
 	if coordinator.Id() != id {
-		log.Info("[id=%v] Lock for objectId=%v has a different id=%v (will not auto-expire)", id, objectId, coordinator.Id())
+		log.Infof("[id=%v] Lock for objectId=%v has a different id=%v (will not auto-expire)", id, objectId, coordinator.Id())
 		return
 	}
-	log.Notice("[id=%v] Auto-expiring lock for objectId=%v since it's been more than the requested expiry of %s", id, objectId, expireTimeout)
+	log.Infof("[id=%v] Auto-expiring lock for objectId=%v since it's been more than the requested expiry of %s", id, objectId, expireTimeout)
 	if err := coordinator.Stop(); err != nil {
-		log.Warning("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", id, objectId, err)
+		log.Warnf("[id=%v] Stopping coordinator failed for objectId=%v (non-fatal, will continue): %s", id, objectId, err)
 	}
 	service.localLock.Lock()
 	delete(service.coordinators, objectId)
 	service.localLock.Unlock()
-	log.Notice("[id=%v] Lock removed for objectId=%v", id, objectId)
+	log.Infof("[id=%v] Lock removed for objectId=%v", id, objectId)
 }
 
 func (service *DistributedMutexService) backoffStrategy() *backoff.ExponentialBackOff {

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"gigawatt-common/pkg/concurrency"
+	"github.com/gigawattio/concurrency"
 
 	"github.com/samuel/go-zookeeper/zk"
 )

@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"gigawatt-common/pkg/testlib"
-	"gigawatt-common/pkg/zk/dmutex"
-	zktestutil "gigawatt-common/pkg/zk/testutil"
-	zkutil "gigawatt-common/pkg/zk/util"
+	"github.com/gigawattio/testlib"
+	"github.com/gigawattio/zklib/dmutex"
+	zktestutil "github.com/gigawattio/zklib/testutil"
+	zkutil "github.com/gigawattio/zklib/util"
 
 	"github.com/samuel/go-zookeeper/zk"
 )
