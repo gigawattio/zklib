@@ -21,7 +21,7 @@ var (
 // port is reachable that connection info will be used.  Otherwise a full test
 // cluster is launched (NB: this can take 6+ seconds).
 func WithZk(t *testing.T, size int, defaultServer string, fn func(zkServers []string)) {
-	if len(defaultServer) > 0 {
+	if size == 1 && len(defaultServer) > 0 {
 		checkCmd := exec.Command("nc", append([]string{"-w", "1"}, strings.Split(defaultServer, ":")...)...)
 		if err := checkCmd.Run(); err == nil {
 			log.Infof("Using already-running default ZooKeeper@%v", defaultServer)

@@ -8,6 +8,7 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/gigawattio/netlib"
+	"github.com/gigawattio/testlib"
 	"github.com/gigawattio/zklib/cluster"
 	"github.com/gigawattio/zklib/cluster/primitives"
 	"github.com/gigawattio/zklib/testutil"
@@ -17,7 +18,7 @@ var zkTimeout = 1 * time.Second
 
 // ncc creates a new Coordinator for a given test cluster.
 func ncc(t *testing.T, zkServers []string, data string, subscribers ...chan primitives.Update) *cluster.Coordinator {
-	cc, err := cluster.NewCoordinator(zkServers, zkTimeout, "/comorgnet/election", data, subscribers...)
+	cc, err := cluster.NewCoordinator(zkServers, zkTimeout, "/"+testlib.CurrentRunningTest(), data, subscribers...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +96,7 @@ func TestClusterLeaderElection(t *testing.T) {
 					expectedLeaderStr := found.String()
 					allMatch := true
 
-					for i, member := range members {
+					for _, member := range members {
 						var leaderStr string
 						if leader := member.Leader(); leader != nil {
 							leaderStr = member.Leader().String()
@@ -105,18 +106,22 @@ func TestClusterLeaderElection(t *testing.T) {
 							t.Errorf("%s had leader=/%s/ but expected value=/%s/, caused allMatch=false", member.Id(), leaderStr, expectedLeaderStr)
 							allMatch = false
 						}
-
-						if replaceLeader && member.Mode() == primitives.Leader {
-							if err := member.Stop(); err != nil {
-								t.Fatal(err)
-							}
-							members[i] = ncc(t, zkServers, fmt.Sprintf("i=%v", i))
-							t.Logf("Shut down leader member=%s and launched new one=%s", member.Id(), members[i].Id())
-						}
 					}
-
 					if !allMatch {
 						t.Fatalf("not all cluster coordinators agreed on who the leader was")
+					}
+
+					if replaceLeader {
+						for i, member := range members {
+							if member.Mode() == primitives.Leader {
+								if err := member.Stop(); err != nil {
+									t.Fatal(err)
+								}
+								members[i] = ncc(t, zkServers, fmt.Sprintf("i=%v", i))
+								t.Logf("Shut down leader member=%s and launched new one=%s", member.Id(), members[i].Id())
+								break
+							}
+						}
 					}
 				}
 
@@ -140,7 +145,7 @@ func TestClusterLeaderElection(t *testing.T) {
 }
 
 func Test_ClusterSubscriptions(t *testing.T) {
-	testutil.WithTestZkCluster(t, 1, func(zkServers []string) {
+	testutil.WithZk(t, 1, "127.0.0.1:2181", func(zkServers []string) {
 		var (
 			subChan           = make(chan primitives.Update)
 			lock              sync.Mutex
@@ -209,7 +214,7 @@ func TestClusterMembersListing(t *testing.T) {
 					case <-ch:
 						ready <- struct{}{}
 					case <-time.After(zkTimeout):
-						t.Fatalf("Timed out after %v waiting for ready signal", zkTimeout)
+						t.Fatalf("[n=%v] Timed out after %v waiting for ready signal", n, zkTimeout)
 					}
 				}
 			)
@@ -223,26 +228,26 @@ func TestClusterMembersListing(t *testing.T) {
 				for j := 0; j < len(ccs); j++ {
 					nodes, err := ccs[j].Members()
 					if err != nil {
-						t.Fatalf("[i=%v j=%v] %s", i, j, err)
+						t.Fatalf("[n=%v i=%v j=%v] %s", n, i, j, err)
 					}
 					if expected, actual := i+1, len(nodes); actual != expected {
-						t.Fatalf("[i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", i, j, expected, actual, nodes)
+						t.Fatalf("[n=%v i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", n, i, j, expected, actual, nodes)
 					}
 				}
 			}
 
 			for i := n - 1; i >= 0; i-- {
 				if err := ccs[i].Stop(); err != nil {
-					t.Fatal("[i=%v] %s", err)
+					t.Fatal("[n=%v i=%v] %s", n, i, err)
 				}
 				ccs = ccs[0 : len(ccs)-1]
 				for j := 0; j < len(ccs); j++ {
 					nodes, err := ccs[j].Members()
 					if err != nil {
-						t.Fatalf("[i=%v j=%v] %s", i, j, err)
+						t.Fatalf("[n=%v i=%v j=%v] %s", n, i, j, err)
 					}
 					if expected, actual := i, len(nodes); actual != expected {
-						t.Fatal("[i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", i, j, expected, actual, nodes)
+						t.Fatal("[n=%v i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", n, i, j, expected, actual, nodes)
 					}
 				}
 			}
