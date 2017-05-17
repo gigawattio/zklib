@@ -17,7 +17,7 @@ var (
 	zkDeleteRetries = 10
 )
 
-// withZk allows for a default ZooKeeper address to be specified, and if the
+// WithZk allows for a default ZooKeeper address to be specified, and if the
 // port is reachable that connection info will be used.  Otherwise a full test
 // cluster is launched (NB: this can take 6+ seconds).
 func WithZk(t *testing.T, size int, defaultServer string, fn func(zkServers []string)) {
