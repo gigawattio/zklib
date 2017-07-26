@@ -43,7 +43,7 @@ func TestCandidateRegistration(t *testing.T) {
 			var (
 				uid       = uuid.NewV4()
 				node      = candidate.NewNode(uid.String(), "127.0.0.1", 8000, nil)
-				candidate = candidate.NewCandidate(electionPath, node)
+				candidate = candidate.New(electionPath, node)
 			)
 
 			leaderChan, err := candidate.Register(conn)
@@ -229,7 +229,7 @@ func candidateConsensusTestCase(t *testing.T, n int, firstCandidateShouldLead bo
 
 			var (
 				node      = candidate.NewNode(fmt.Sprintf("%v", i), "127.0.0.1", 8000+i, nil)
-				candidate = candidate.NewCandidate(electionPath, node)
+				candidate = candidate.New(electionPath, node)
 			)
 
 			leaderChan, err := candidate.Register(conn)
@@ -447,7 +447,7 @@ func TestCandidateParticipants(t *testing.T) {
 					var (
 						uid        = uuid.NewV4()
 						node       = candidate.NewNode(uid.String(), "127.0.0.1", 8000+i, nil)
-						c          = candidate.NewCandidate(electionPath, node)
+						c          = candidate.New(electionPath, node)
 						leaderChan <-chan *candidate.Node
 						err        error
 					)

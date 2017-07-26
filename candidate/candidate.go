@@ -42,7 +42,7 @@ type Candidate struct {
 	Debug            bool
 }
 
-func NewCandidate(electionPath string, node *Node) *Candidate {
+func New(electionPath string, node *Node) *Candidate {
 	candidate := &Candidate{
 		ElectionPath: electionPath,
 		Node:         node,

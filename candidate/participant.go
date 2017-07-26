@@ -39,7 +39,7 @@ type Participant struct {
 
 func Participate(config ParticipantConfig) (participant Participant) {
 	var (
-		candidate      = NewCandidate(config.ElectionPath, config.Node)
+		candidate      = New(config.ElectionPath, config.Node)
 		zkEvents       <-chan zk.Event
 		zkCli          *zk.Conn
 		fakeLeaderChan = make(<-chan *Node)
