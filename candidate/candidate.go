@@ -158,7 +158,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				select {
 				case result := <-asyncEnroll():
 					if result.err != nil {
-						log.Error("[uuid=%v] Candidate watcher enrollment err=%s", c.Node.Uuid, result.err)
+						log.Errorf("[uuid=%v] Candidate watcher enrollment err=%s", c.Node.Uuid, result.err)
 						time.Sleep(1 * time.Second) // TODO: Definitely use backoff here.
 						continue
 					} else if result.leader != leader {
