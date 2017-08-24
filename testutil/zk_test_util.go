@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"fmt"
+	"net"
 	"os/exec"
 	"strings"
 	"sync"
@@ -218,16 +219,10 @@ func waitForPortsToOpen(addressPorts []string, timeout time.Duration) error {
 		func(addressPort string) {
 			portCheck := func() error {
 				for {
-					cmd, err := portCheckCmd(addressPort)
-					if err != nil {
-						return err
-					}
-					output, err := cmd.CombinedOutput()
-					if err := IsCommandNotFound(output, err); err != nil {
-						return err
-					}
-					if err == nil { // Port is open!
-						return nil
+					conn, err := net.DialTimeout("tcp", addressPort, time.Second)
+					if err == nil {
+						conn.Close()
+						return nil // Port is open!
 					}
 					time.Sleep(retryInterval)
 				}
@@ -267,17 +262,11 @@ func waitForPortsToClose(addressPorts []string, timeout time.Duration) error {
 		func(addressPort string) {
 			waiter := func() error {
 				for {
-					cmd, err := portCheckCmd(addressPort)
+					conn, err := net.DialTimeout("tcp", addressPort, time.Second)
 					if err != nil {
-						return err
-					}
-					output, err := cmd.CombinedOutput()
-					if err != nil {
-						if err := IsCommandNotFound(output, err); err != nil {
-							return err
-						}
 						return nil // Port is closed!
 					}
+					conn.Close()
 					time.Sleep(retryInterval)
 				}
 			}
@@ -299,28 +288,6 @@ func waitForPortsToClose(addressPorts []string, timeout time.Duration) error {
 
 	if err != nil {
 		return err
-	}
-	return nil
-}
-
-func portCheckCmd(addressPort string) (*exec.Cmd, error) {
-	if !strings.Contains(addressPort, ":") {
-		return nil, fmt.Errorf("addressPort=%q has no colon (':') denoting a port for netcat", addressPort)
-	}
-	cmd := exec.Command("nc", append([]string{"-v", "-w", "1"}, strings.Split(addressPort, ":")...)...)
-	return cmd, nil
-}
-
-// IsCommandNotFound attempts to determine if a cmd.CombinedOutput() result
-// contains the text "command not found" and returns an error if so.
-//
-// Used to detect unrecoverable errors.
-func IsCommandNotFound(output []byte, err error) error {
-	if err != nil {
-		outputStr := fmt.Sprintf("%v %v", err.Error(), string(output))
-		if strings.Contains(outputStr, "command not found") || strings.Contains(outputStr, "executable file not found in $PATH") || strings.Contains(outputStr, "no such file or directory") {
-			return fmt.Errorf("detected 'command not found' error: %s output=%q", err, outputStr)
-		}
 	}
 	return nil
 }
