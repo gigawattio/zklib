@@ -223,7 +223,7 @@ func candidateConsensusTestCase(t *testing.T, n int, firstCandidateShouldLead bo
 		zktestutil.WhenZkHasSession(zkEvents, func() {
 			if i == 0 {
 				if err := zkutil.RecursivelyDelete(conn, electionPath, zkDeleteRetries); err != nil {
-					t.Fatal(err)
+					t.Fatalf("Recursively deleting path=%v: %s", electionPath, err)
 				}
 			}
 

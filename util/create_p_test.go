@@ -1,11 +1,10 @@
-package util_test
+package util
 
 import (
 	"testing"
 	"time"
 
 	"github.com/gigawattio/zklib/testutil"
-	"github.com/gigawattio/zklib/util"
 
 	"github.com/cenkalti/backoff"
 	"github.com/samuel/go-zookeeper/zk"
@@ -25,10 +24,10 @@ func TestCreateP(t *testing.T) {
 
 		testutil.WhenZkHasSession(zkEvents, func() {
 			path := "/TestCreateP"
-			if err := util.RecursivelyDelete(conn, path); err != nil {
+			if err := RecursivelyDelete(conn, path); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := util.CreateP(conn, path, []byte("hi"), 0, zk.WorldACL(zk.PermAll)); err != nil {
+			if _, err := CreateP(conn, path, []byte("hi"), 0, zk.WorldACL(zk.PermAll)); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -48,10 +47,10 @@ func TestMustCreateP(t *testing.T) {
 		go testutil.WhenZkHasSession(zkEvents, func() {
 			defer func() { done <- struct{}{} }()
 			path := "/TestMustCreateP"
-			if err := util.RecursivelyDelete(conn, path); err != nil {
+			if err := RecursivelyDelete(conn, path); err != nil {
 				t.Fatal(err)
 			}
-			util.MustCreateP(conn, path, []byte("hi"), 0, zk.WorldACL(zk.PermAll), backoff.NewConstantBackOff(backoffDuration))
+			MustCreateP(conn, path, []byte("hi"), 0, zk.WorldACL(zk.PermAll), backoff.NewConstantBackOff(backoffDuration))
 			return
 		})
 
@@ -79,14 +78,14 @@ func TestMustCreateProtectedEphemeralSequential(t *testing.T) {
 		go testutil.WhenZkHasSession(zkEvents, func() {
 			defer func() { done <- struct{}{} }()
 			path := "/TestMustCreateProtectedEphemeralSequential"
-			if err := util.RecursivelyDelete(conn, path); err != nil {
+			if err := RecursivelyDelete(conn, path); err != nil {
 				t.Fatal(err)
 			}
 			strategy := backoff.NewConstantBackOff(backoffDuration)
-			util.MustCreateP(conn, path, []byte("hi"), 0, zk.WorldACL(zk.PermAll), strategy)
+			MustCreateP(conn, path, []byte("hi"), 0, zk.WorldACL(zk.PermAll), strategy)
 			strategy = backoff.NewConstantBackOff(backoffDuration)
-			zxId := util.MustCreateProtectedEphemeralSequential(conn, path, []byte("hi"), zk.WorldACL(zk.PermAll), strategy)
-			t.Logf("zxId=%v", zxId)
+			zNode := MustCreateProtectedEphemeralSequential(conn, path, []byte("hi"), zk.WorldACL(zk.PermAll), strategy)
+			t.Logf("zNode=%v", zNode)
 			return
 		})
 

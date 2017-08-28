@@ -34,8 +34,8 @@ var (
 type Candidate struct {
 	ElectionPath     string
 	Node             *Node
-	zxId             string
-	zxIdLock         sync.RWMutex
+	zNode            string
+	zNodeLock        sync.RWMutex
 	registered       bool
 	registrationLock sync.Mutex
 	stopChan         chan chan struct{}
@@ -72,15 +72,15 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 		log.Infof("[uuid=%v] Candidate enrolling..", c.Node.Uuid)
 
 		var (
-			zxId     string
+			zNode    string
 			data     []byte
 			children []string
 		)
 
-		if zxId, err = c.validZxId(conn); err != nil {
+		if zNode, err = c.validZNode(conn); err != nil {
 			return
 		}
-		if zxId == "" {
+		if zNode == "" {
 			if err = c.ensureElectionPathExists(conn); err != nil {
 				return
 			}
@@ -89,33 +89,33 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				return
 			}
 			// log.Debugf("CPES for node=%v", string(data))
-			if zxId, err = conn.CreateProtectedEphemeralSequential(c.ElectionPath+"/n_", data, worldAllAcl); err != nil {
+			if zNode, err = conn.CreateProtectedEphemeralSequential(c.ElectionPath+"/n_", data, worldAllAcl); err != nil {
 				err = fmt.Errorf("creating protected ephemeral sequential %q: %s", c.ElectionPath, err)
 				return
 			}
-			if idx := strings.LastIndex(zxId, "/"); idx > 0 {
-				zxId = zxId[idx+1:]
+			if idx := strings.LastIndex(zNode, "/"); idx > 0 {
+				zNode = zNode[idx+1:]
 			} else {
-				err = fmt.Errorf("received invalid zxid=%v", zxId)
+				err = fmt.Errorf("received invalid zxid=%v", zNode)
 				return
 			}
 			if c.Debug {
-				log.Debugf("[uuid=%v] Candidate has new zxId=%v", c.Node.Uuid, zxId)
+				log.Debugf("[uuid=%v] Candidate has new zNode=%v", c.Node.Uuid, zNode)
 			}
-			c.zxIdLock.Lock()
-			c.zxId = zxId
-			c.zxIdLock.Unlock()
+			c.zNodeLock.Lock()
+			c.zNode = zNode
+			c.zNodeLock.Unlock()
 		}
 
 		if children, _, watch, err = conn.ChildrenW(c.ElectionPath); err != nil {
 			return
 		}
-		sort.Sort(ZxIds(children))
+		sort.Sort(ZNodes(children))
 		if c.Debug {
 			log.Debugf("[uuid=%v] Candidate children=%v", c.Node.Uuid, children)
 		}
 
-		if children[0] == zxId {
+		if children[0] == zNode {
 			leader = c.Node
 		} else if leader, err = c.getNode(conn, children[0]); err != nil {
 			return
@@ -204,7 +204,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 
 			case ackCh := <-c.stopChan:
 				close(leaderChan)
-				c.wipeZxId(conn)
+				c.wipeZNode(conn)
 				ackCh <- struct{}{}
 				return
 			}
@@ -215,22 +215,22 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 	return leaderChan, nil
 }
 
-func (c *Candidate) wipeZxId(conn *zk.Conn) {
-	c.zxIdLock.Lock()
-	defer c.zxIdLock.Unlock()
+func (c *Candidate) wipeZNode(conn *zk.Conn) {
+	c.zNodeLock.Lock()
+	defer c.zNodeLock.Unlock()
 
-	path := c.ElectionPath + "/" + c.zxId
+	path := c.ElectionPath + "/" + c.zNode
 	exists, stat, err := conn.Exists(path)
 	if err != nil {
-		log.Warnf("[uuid=%v] Candidate zxId=%v deletion skipped due to existence check err=%s", c.Node.Uuid, c.zxId, err)
+		log.Warnf("[uuid=%v] Candidate zNode=%v deletion skipped due to existence check err=%s", c.Node.Uuid, c.zNode, err)
 	} else if exists {
 		if err = conn.Delete(path, stat.Version); err != nil {
-			log.Warnf("[uuid=%v] Candidate zxId=%v deletion failed due to delete err=%s", c.Node.Uuid, c.zxId, err)
+			log.Warnf("[uuid=%v] Candidate zNode=%v deletion failed due to delete err=%s", c.Node.Uuid, c.zNode, err)
 		} else {
-			log.Infof("[uuid=%v] Candidate successfully deleted zxId path=%v", c.Node.Uuid, path)
+			log.Infof("[uuid=%v] Candidate successfully deleted zNode path=%v", c.Node.Uuid, path)
 		}
 	} else {
-		log.Infof("[uuid=%v] Candidate zxId=%v deletion skipped due to !exists", c.Node.Uuid, c.zxId)
+		log.Infof("[uuid=%v] Candidate zNode=%v deletion skipped due to !exists", c.Node.Uuid, c.zNode)
 	}
 }
 
@@ -253,24 +253,24 @@ func (c *Candidate) Unregister() error {
 	return nil
 }
 
-func (c *Candidate) validZxId(conn *zk.Conn) (zxId string, err error) {
-	c.zxIdLock.RLock()
-	zxId = c.zxId
-	c.zxIdLock.RUnlock()
+func (c *Candidate) validZNode(conn *zk.Conn) (zNode string, err error) {
+	c.zNodeLock.RLock()
+	zNode = c.zNode
+	c.zNodeLock.RUnlock()
 
-	if zxId == "" {
+	if zNode == "" {
 		return
 	}
 
 	var (
-		path   = c.ElectionPath + "/" + zxId
+		path   = c.ElectionPath + "/" + zNode
 		exists bool
 	)
 
 	if exists, _, err = conn.Exists(path); err != nil {
-		err = fmt.Errorf("checking if zxId=%v exists: %s", path, err)
+		err = fmt.Errorf("checking if zNode=%v exists: %s", path, err)
 	} else if !exists {
-		zxId = ""
+		zNode = ""
 	}
 	return
 }
@@ -288,15 +288,15 @@ func (c *Candidate) ensureElectionPathExists(conn *zk.Conn) error {
 	return nil
 }
 
-func (c *Candidate) getNode(conn *zk.Conn, zxId string) (node *Node, err error) {
+func (c *Candidate) getNode(conn *zk.Conn, zNode string) (node *Node, err error) {
 	var data []byte
-	if data, _, err = conn.Get(c.ElectionPath + "/" + zxId); err != nil {
-		err = fmt.Errorf("getting node data for zxId=%v: %s", zxId, err)
+	if data, _, err = conn.Get(c.ElectionPath + "/" + zNode); err != nil {
+		err = fmt.Errorf("getting node data for zNode=%v: %s", zNode, err)
 		return
 	}
 	node = &Node{}
 	if err = json.Unmarshal(data, node); err != nil {
-		err = fmt.Errorf("deserializing node data for zxId=%v: %s", zxId, err)
+		err = fmt.Errorf("deserializing node data for zNode=%v: %s", zNode, err)
 		return
 	}
 	return
@@ -317,11 +317,11 @@ func (c *Candidate) Participants(conn *zk.Conn) (participants []Node, err error)
 	)
 	participants = make([]Node, 0, numChildren)
 
-	for _, zxId := range children {
-		func(zxId string) {
+	for _, zNode := range children {
+		func(zNode string) {
 			collectorFunc := func() (err error) {
 				var node *Node
-				if node, err = c.getNode(conn, zxId); err != nil {
+				if node, err = c.getNode(conn, zNode); err != nil {
 					return
 				}
 				participantsLock.Lock()
@@ -330,7 +330,7 @@ func (c *Candidate) Participants(conn *zk.Conn) (participants []Node, err error)
 				return
 			}
 			collectorFuncs = append(collectorFuncs, collectorFunc)
-		}(zxId)
+		}(zNode)
 	}
 
 	if err = concurrency.MultiGo(collectorFuncs...); err != nil {
@@ -339,10 +339,10 @@ func (c *Candidate) Participants(conn *zk.Conn) (participants []Node, err error)
 	return
 }
 
-// func (c *Candidate) ZxId() string {
-// 	c.zxIdLock.RLock()
-// 	defer c.zxIdLock.RUnlock()
-// 	return c.zxId
+// func (c *Candidate) ZNode() string {
+// 	c.zNodeLock.RLock()
+// 	defer c.zNodeLock.RUnlock()
+// 	return c.zNode
 // }
 
 func (c *Candidate) children(conn *zk.Conn) (children []string, err error) {

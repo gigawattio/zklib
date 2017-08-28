@@ -205,16 +205,16 @@ func (cc *Coordinator) Members() (nodes []primitives.Node, err error) {
 }
 
 func (cc *Coordinator) electionLoop() {
-	createElectionZNode := func() (zxId string) {
+	createElectionZNode := func() (zNode string) {
 		log.Debugf("%v: creating election path=%v", cc.Id(), cc.leaderElectionPath)
 		strategy := backoff.NewConstantBackOff(backoffDuration)
-		zxIds := util.MustCreateP(cc.zkCli, cc.leaderElectionPath, []byte{}, 0, zk.WorldACL(zk.PermAll), strategy)
-		log.Debugf("%v: created election path, zxIds=%+v", cc.Id(), zxIds)
+		zNodes := util.MustCreateP(cc.zkCli, cc.leaderElectionPath, []byte{}, 0, zk.WorldACL(zk.PermAll), strategy)
+		log.Debugf("%v: created election path, zNodes=%+v", cc.Id(), zNodes)
 
 		log.Debugf("%v: creating protected ephemeral", cc.Id())
 		strategy = backoff.NewConstantBackOff(backoffDuration)
-		zxId = util.MustCreateProtectedEphemeralSequential(cc.zkCli, cc.leaderElectionPath+"/n_", cc.localNodeJson, zk.WorldACL(zk.PermAll), strategy)
-		log.Debugf("%v: created protected ephemeral, zxId=%v", cc.Id(), zxId)
+		zNode = util.MustCreateProtectedEphemeralSequential(cc.zkCli, cc.leaderElectionPath+"/n_", cc.localNodeJson, zk.WorldACL(zk.PermAll), strategy)
+		log.Debugf("%v: created protected ephemeral, zNode=%v", cc.Id(), zNode)
 		return
 	}
 
@@ -238,7 +238,7 @@ func (cc *Coordinator) electionLoop() {
 		// var children []string
 		var (
 			childCh <-chan zk.Event
-			zxId    string // Most recent zxid.
+			zNode   string // Most recent zxid.
 		)
 
 		setWatch := func() {
@@ -332,8 +332,8 @@ func (cc *Coordinator) electionLoop() {
 				if ev.Type == zk.EventSession {
 					switch ev.State {
 					case zk.StateHasSession:
-						zxId = createElectionZNode()
-						log.Debugf("%v: new zxId=%v", cc.Id(), zxId)
+						zNode = createElectionZNode()
+						log.Debugf("%v: new zNode=%v", cc.Id(), zNode)
 						setWatch()
 						checkLeader()
 					}

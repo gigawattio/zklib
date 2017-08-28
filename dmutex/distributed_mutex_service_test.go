@@ -16,7 +16,11 @@ import (
 func Test_DistributedMutexService(t *testing.T) {
 	zkPath := fmt.Sprintf("/%v", testlib.CurrentRunningTest())
 	zktestutil.WithZk(t, 1, "127.0.0.1:2181", func(zkServers []string) {
-		defer zktestutil.ResetZk(t, zkServers, zkPath)
+		defer func() {
+			if err := zkutil.ResetZk(zkServers, zkPath); err != nil {
+				t.Error(err)
+			}
+		}()
 		service := dmutex.NewDistributedMutexService(zkServers, 5*time.Second, zkPath)
 
 		objectId1 := "my-app-1"
@@ -56,7 +60,11 @@ func Test_DistributedMutexServiceCleaner(t *testing.T) {
 			service = dmutex.NewDistributedMutexService(zkServers, 5*time.Second, zkPath)
 		)
 
-		defer zktestutil.ResetZk(t, zkServers, zkPath)
+		defer func() {
+			if err := zkutil.ResetZk(zkServers, zkPath); err != nil {
+				t.Error(err)
+			}
+		}()
 
 		cleanAndVerifyNumChildren := func(expected int) error {
 			if err := service.Clean(); err != nil {
