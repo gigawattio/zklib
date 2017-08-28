@@ -4,23 +4,34 @@ import (
 	"strings"
 )
 
-type ZxIds []string
+type ZNodes []string
 
-func (zxIds ZxIds) Len() int {
-	return len(zxIds)
+func (zNodes ZNodes) Len() int {
+	return len(zNodes)
 }
 
-func (zxIds ZxIds) Less(i, j int) bool {
+func (zNodes ZNodes) Less(i, j int) bool {
 	var (
-		idx = strings.LastIndex(zxIds[i], "_")
-		jdx = strings.LastIndex(zxIds[i], "_")
+		idx = strings.LastIndex(zNodes[i], "_")
+		jdx = strings.LastIndex(zNodes[j], "_")
 	)
-	if idx < 0 || jdx < 0 || idx == len(zxIds[i])-1 || jdx == len(zxIds[j])-1 {
+	if idx < 0 && jdx < 0 {
 		return false
+	} else if idx < 0 {
+		return false
+	} else if jdx < 0 {
+		return true
 	}
-	return zxIds[i][idx+1:] < zxIds[j][jdx+1:]
+	if iLen0, jLen0 := idx == len(zNodes[i])-1, jdx == len(zNodes[j])-1; iLen0 && jLen0 {
+		return false
+	} else if iLen0 && !jLen0 {
+		return false
+	} else if !iLen0 && jLen0 {
+		return true
+	}
+	return zNodes[i][idx+1:] < zNodes[j][jdx+1:]
 }
 
-func (zxIds ZxIds) Swap(i, j int) {
-	zxIds[i], zxIds[j] = zxIds[j], zxIds[i]
+func (zNodes ZNodes) Swap(i, j int) {
+	zNodes[i], zNodes[j] = zNodes[j], zNodes[i]
 }
