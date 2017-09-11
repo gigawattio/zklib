@@ -25,6 +25,8 @@ var (
 	NotRegisteredError      = errors.New("not registered")
 	NotEnrolledError        = errors.New("candidate is not presently enrolled in the election")
 	InvalidChildrenLenError = errors.New("0 children listed afer created protected ephemeral sequential - this should never happen")
+
+	DefaultConnCheckFrequency = 5 * time.Second // Default frequency of connection checks.
 )
 
 var (
@@ -32,21 +34,23 @@ var (
 )
 
 type Candidate struct {
-	ElectionPath     string
-	Node             *Node
-	zNode            string
-	zNodeLock        sync.RWMutex
-	registered       bool
-	registrationLock sync.Mutex
-	stopChan         chan chan struct{}
-	Debug            bool
+	ElectionPath       string
+	Node               *Node
+	ConnCheckFrequency time.Duration // Frequency of connection checks.
+	zNode              string
+	zNodeLock          sync.RWMutex
+	registered         bool
+	registrationLock   sync.Mutex
+	stopChan           chan chan struct{}
+	Debug              bool
 }
 
 func New(electionPath string, node *Node) *Candidate {
 	candidate := &Candidate{
-		ElectionPath: electionPath,
-		Node:         node,
-		stopChan:     make(chan chan struct{}, 1),
+		ElectionPath:       electionPath,
+		Node:               node,
+		ConnCheckFrequency: DefaultConnCheckFrequency,
+		stopChan:           make(chan chan struct{}, 1),
 	}
 	return candidate
 }
@@ -164,6 +168,10 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 					} else if result.leader != leader {
 						leader = result.leader
 
+						if c.Debug && leader != nil {
+							log.Debugf("[uuid=%v] Sending updated leader=%+v", c.Node.Uuid, *leader)
+						}
+
 						select {
 						case leaderChan <- leader:
 							// pass
@@ -183,7 +191,7 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 			case event, ok := <-watch:
 				if !ok {
 					if c.Debug {
-						log.Debugf("[uuid=%v] Candidate watcher detected watch chan closed, triggering enroll", c.Node.Uuid)
+						log.Debugf("[uuid=%v] Candidate watcher detected watch chan closed", c.Node.Uuid)
 					}
 					watch = nil
 					continue
@@ -199,6 +207,27 @@ func (c *Candidate) Register(conn *zk.Conn) (<-chan *Node, error) {
 				default:
 					if c.Debug {
 						log.Debugf("[uuid=%v] Candidate watcher received misc event=%+v", c.Node.Uuid, event)
+					}
+				}
+
+			case <-time.After(c.ConnCheckFrequency):
+				if leader != nil {
+					state := conn.State()
+					if state == zk.StateConnecting || state == zk.StateDisconnected || state == zk.StateExpired || state == zk.StateAuthFailed || state == zk.StateUnknown {
+						// When connection state is deemed unhealthy, reset the values for watch
+						// and leader.
+						watch = nil
+						leader = nil
+
+						if c.Debug {
+							log.Debugf("[uuid=%v] Unhealthy connection state deteted, values for leader and watch have been reset", c.Node.Uuid)
+						}
+
+						select {
+						case leaderChan <- leader:
+							// pass
+						default:
+						}
 					}
 				}
 
