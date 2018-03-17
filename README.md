@@ -11,7 +11,7 @@ Zklib is a set of Go (golang) packages which provide distributed-system primitiv
 * Cluster Candidacy (package: [candidate](candidate))
 * Distributed Mutex (package: [dmutex](dmutex))
 
-Created by [Jay Taylor](http://jaytaylor.com/) and used by [Gigawatt](http://gigawatt.io/).
+Created by [Jay Taylor](https://jaytaylor.com/) and used by [Gigawatt](https://gigawatt.io/).
 
 ### Requirements
 
