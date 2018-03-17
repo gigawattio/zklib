@@ -61,7 +61,7 @@ func Test_DistributedMutexServiceCleaner(t *testing.T) {
 		)
 
 		defer func() {
-			if err := zkutil.ResetZk(zkServers, zkPath); err != nil {
+			if err := zkutil.ResetZk(zkServers, strings.TrimRight(zkPath, "/")); err != nil {
 				t.Errorf("Unexpected error while resetting zkPath=%q: %s", zkPath, err)
 			}
 		}()
