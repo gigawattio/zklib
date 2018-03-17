@@ -311,7 +311,7 @@ func (c *Candidate) ensureElectionPathExists(conn *zk.Conn) error {
 	}
 	if !exists {
 		if _, err = zkutil.CreateP(conn, c.ElectionPath, []byte{}, 0, worldAllAcl); err != nil && err != zk.ErrNodeExists {
-			return fmt.Errorf("creating electionPath=%v", c.ElectionPath, err)
+			return fmt.Errorf("creating electionPath=%v: %s", c.ElectionPath, err)
 		}
 	}
 	return nil

@@ -238,7 +238,7 @@ func TestClusterMembersListing(t *testing.T) {
 
 			for i := n - 1; i >= 0; i-- {
 				if err := ccs[i].Stop(); err != nil {
-					t.Fatal("[n=%v i=%v] %s", n, i, err)
+					t.Fatalf("[n=%v i=%v] %s", n, i, err)
 				}
 				ccs = ccs[0 : len(ccs)-1]
 				for j := 0; j < len(ccs); j++ {
@@ -247,7 +247,7 @@ func TestClusterMembersListing(t *testing.T) {
 						t.Fatalf("[n=%v i=%v j=%v] %s", n, i, j, err)
 					}
 					if expected, actual := i, len(nodes); actual != expected {
-						t.Fatal("[n=%v i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", n, i, j, expected, actual, nodes)
+						t.Fatalf("[n=%v i=%v j=%v] Expected number of members=%v but actual=%v; returned nodes=%+v", n, i, j, expected, actual, nodes)
 					}
 				}
 			}

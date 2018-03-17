@@ -41,7 +41,7 @@ func TestCandidateRegistration(t *testing.T) {
 			}
 
 			var (
-				uid       = uuid.NewV4()
+				uid       = uuid.Must(uuid.NewV4())
 				node      = candidate.NewNode(uid.String(), "127.0.0.1", 8000, nil)
 				candidate = candidate.New(electionPath, node)
 			)
@@ -445,7 +445,7 @@ func TestCandidateParticipants(t *testing.T) {
 
 				for i := 0; i < n; i++ {
 					var (
-						uid        = uuid.NewV4()
+						uid        = uuid.Must(uuid.NewV4())
 						node       = candidate.NewNode(uid.String(), "127.0.0.1", 8000+i, nil)
 						c          = candidate.New(electionPath, node)
 						leaderChan <-chan *candidate.Node

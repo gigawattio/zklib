@@ -52,11 +52,16 @@ type clusterMembershipResponse struct {
 // leaderElectionPath is the ZooKeeper path to conduct elections under.
 func NewCoordinator(zkServers []string, sessionTimeout time.Duration, leaderElectionPath string, data string, subscribers ...chan primitives.Update) (*Coordinator, error) {
 	// Gather local node info.
-	uid := uuid.NewV4()
+	uid, err := uuid.NewV4()
+	if err != nil {
+		return nil, fmt.Errorf("NewCoordinator: %s", err)
+	}
+
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("NewCoordinator: %s", err)
 	}
+
 	localNode := primitives.Node{
 		Uuid:     uid,
 		Hostname: hostname,

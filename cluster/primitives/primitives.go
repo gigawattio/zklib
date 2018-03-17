@@ -19,7 +19,7 @@ type Node struct {
 
 func NewNode(hostname string) *Node {
 	node := &Node{
-		Uuid:     uuid.NewV4(),
+		Uuid:     uuid.Must(uuid.NewV4()),
 		Hostname: hostname,
 	}
 	return node

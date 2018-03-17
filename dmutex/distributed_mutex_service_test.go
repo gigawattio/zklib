@@ -62,7 +62,7 @@ func Test_DistributedMutexServiceCleaner(t *testing.T) {
 
 		defer func() {
 			if err := zkutil.ResetZk(zkServers, zkPath); err != nil {
-				t.Error(err)
+				t.Errorf("Unexpected error while resetting zkPath=%q: %s", zkPath, err)
 			}
 		}()
 
@@ -72,8 +72,8 @@ func Test_DistributedMutexServiceCleaner(t *testing.T) {
 			}
 			err := zkutil.WithZkSession(zkServers, timeout, func(conn *zk.Conn) error {
 				children, _, err := conn.Children(zkutil.NormalizePath(zkPath))
-				t.Logf("children=%v err=%s\n", children, err)
 				if err != nil && err != zk.ErrNoNode {
+					t.Logf("children=%v err=%s\n", children, err)
 					return err
 				}
 				if actual := len(children); actual != expected {
