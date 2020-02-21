@@ -11,12 +11,11 @@ import (
 	"github.com/gigawattio/zklib/candidate"
 	zktestutil "github.com/gigawattio/zklib/testutil"
 	zkutil "github.com/gigawattio/zklib/util"
-
-	log "github.com/Sirupsen/logrus"
 	"github.com/kr/pretty"
 	"github.com/montanaflynn/stats"
 	"github.com/samuel/go-zookeeper/zk"
 	"github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 const (

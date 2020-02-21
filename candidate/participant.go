@@ -7,9 +7,8 @@ import (
 	"time"
 
 	"github.com/gigawattio/errorlib"
-
-	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
+	log "github.com/sirupsen/logrus"
 )
 
 type ParticipantConfig struct {

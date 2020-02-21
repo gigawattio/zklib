@@ -11,9 +11,8 @@ import (
 
 	"github.com/gigawattio/concurrency"
 	zkutil "github.com/gigawattio/zklib/util"
-
-	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
+	log "github.com/sirupsen/logrus"
 )
 
 const (

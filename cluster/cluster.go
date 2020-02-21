@@ -9,15 +9,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/gigawattio/concurrency"
 	"github.com/gigawattio/gentle"
 	"github.com/gigawattio/zklib/cluster/primitives"
 	"github.com/gigawattio/zklib/util"
-
-	log "github.com/Sirupsen/logrus"
-	"github.com/cenkalti/backoff"
 	"github.com/samuel/go-zookeeper/zk"
 	"github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
