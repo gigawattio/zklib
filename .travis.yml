@@ -1,19 +1,31 @@
 language: go
 
 go:
+  # n.b. For golang release history, see https://golang.org/doc/devel/release.html
   - tip
-  - "1.10"
-  - 1.9
-  - 1.8
-  - 1.7
+  - "1.13.8"
+  - "1.12.17"
+  - "1.11.13"
+  - "1.10.8"
+  - "1.9.7"
 
-before_install:
-  - curl --silent --show-error -O https://archive.apache.org/dist/zookeeper/zookeeper-3.4.6/zookeeper-3.4.6.tar.gz
-  - tar -xzf zookeeper-3.4.6.tar.gz
+env:
+  global:
+    - ZOOKEEPER_VERSION: 3.5.7
+
+before_script:
+  #- "curl --silent --show-error -O https://archive.apache.org/dist/zookeeper/zookeeper-$ZOOKEEPER_VERSION/zookeeper-$ZOOKEEPER_VERSION.tar.gz"
+  - env
+  - "set -x"
+  - "ls -lah"
+  - pwd
+  - curl --silent --show-error -O https://archive.apache.org/dist/zookeeper/zookeeper-$ZOOKEEPER_VERSION/zookeeper-$ZOOKEEPER_VERSION.tar.gz"
+  - "ls -lah"
   - go get github.com/mattn/goveralls
   - go get golang.org/x/tools/cmd/cover
 
 script:
+  - tar -xzf zookeeper-$ZOOKEEPER_VERSION.tar.gz
   - go test ./...
 
 notifications:
