@@ -7,13 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/gigawattio/zklib/cluster"
 	"github.com/gigawattio/zklib/cluster/primitives"
 	zkutil "github.com/gigawattio/zklib/util"
-
-	log "github.com/Sirupsen/logrus"
-	"github.com/cenkalti/backoff"
 	"github.com/samuel/go-zookeeper/zk"
+	log "github.com/sirupsen/logrus"
 )
 
 type DistributedMutexService struct {

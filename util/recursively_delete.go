@@ -4,9 +4,8 @@ import (
 	"time"
 
 	"github.com/gigawattio/concurrency"
-
-	log "github.com/Sirupsen/logrus"
 	"github.com/samuel/go-zookeeper/zk"
+	log "github.com/sirupsen/logrus"
 )
 
 func RecursivelyDelete(conn *zk.Conn, path string, numRetries ...int) error {

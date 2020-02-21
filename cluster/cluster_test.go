@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/gigawattio/netlib"
 	"github.com/gigawattio/testlib"
 	"github.com/gigawattio/zklib/cluster"
 	"github.com/gigawattio/zklib/cluster/primitives"
 	"github.com/gigawattio/zklib/testutil"
+	log "github.com/sirupsen/logrus"
 )
 
 var zkTimeout = 1 * time.Second

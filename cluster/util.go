@@ -3,8 +3,8 @@ package cluster
 import (
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/cenkalti/backoff"
+	log "github.com/sirupsen/logrus"
 )
 
 // retryUntilSuccess will keep attempting an operation until it succeeds.
